@@ -73,3 +73,27 @@ export interface HttpConfig {
   headers: Record<string, string>;
   timeout?: number;
 }
+
+/** 预览合成触发模式 */
+export type PreviewTriggerMode = 'percentage' | 'segments' | 'disabled';
+
+/** 预览文件处理模式 */
+export type PreviewFileMode = 'temporary' | 'keep' | 'ask';
+
+/** 预览配置 */
+export interface PreviewConfig {
+  autoMerge: boolean;           // 是否自动合成
+  triggerMode: PreviewTriggerMode; // 触发模式
+  triggerValue: number;          // 百分比或分片数
+  fileMode: PreviewFileMode;     // 文件处理模式
+}
+
+/** 预览文件信息 */
+export interface PreviewFile {
+  file: string;           // 文件名
+  path: string;           // 完整路径
+  segments: number;       // 包含的分片数
+  duration: string;       // 时长估计
+  createdAt: string;      // 创建时间
+  mode: PreviewFileMode;  // 文件模式
+}
