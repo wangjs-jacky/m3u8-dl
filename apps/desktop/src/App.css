@@ -929,3 +929,17 @@ body {
   .col-progress { width: 20%; }
   .col-actions { width: 15%; }
 }
+
+/* ============================================
+   预览按钮样式
+   ============================================ */
+
+.btn-table-action.preview:hover {
+  color: var(--info);
+  border-color: var(--info);
+}
+
+.btn-table-action.preview:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
