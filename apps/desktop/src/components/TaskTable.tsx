@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { FolderOpen, Pause, Play, Trash2, Inbox } from 'lucide-react'
+import { FolderOpen, Pause, Play, Trash2, Inbox, Film, Eye } from 'lucide-react'
 import { useDownloadStore, DownloadTask, DownloadStatus } from '../stores/downloadStore'
 
 // 在 Finder 中显示文件
@@ -59,6 +59,11 @@ function getStatusText(task: DownloadTask): string {
   }
 }
 
+function canCreatePreview(task: DownloadTask): boolean {
+  // 下载中且进度大于 0 时可以创建预览
+  return ['downloading'].includes(task.status) && task.progress > 0 && !task.isMergingPreview
+}
+
 function formatSize(bytes?: number): string {
   if (!bytes || bytes === 0) return '--'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -84,6 +89,7 @@ export function TaskTable({ onDoubleClick }: TaskTableProps) {
     resumeTask,
     deleteTask,
     taskFilter,
+    createPreview,  // 新增
   } = useDownloadStore()
 
   const tasks = getFilteredTasks()
@@ -124,6 +130,22 @@ export function TaskTable({ onDoubleClick }: TaskTableProps) {
   const isPaused = (task: DownloadTask) => task.status === 'paused'
 
   const isCompleted = (task: DownloadTask) => task.status === 'completed'
+
+  const handleCreatePreview = async (task: DownloadTask) => {
+    try {
+      await createPreview(task.id, 'temporary')
+    } catch (error) {
+      console.error('Failed to create preview:', error)
+    }
+  }
+
+  const openPreview = async (previewPath: string) => {
+    try {
+      await invoke('reveal_in_finder', { path: previewPath })
+    } catch (error) {
+      console.error('Failed to open preview:', error)
+    }
+  }
 
   const canDelete = (task: DownloadTask) =>
     ['completed', 'error', 'cancelled', 'paused'].includes(task.status)
@@ -208,6 +230,28 @@ export function TaskTable({ onDoubleClick }: TaskTableProps) {
                       title="删除"
                     >
                       <Trash2 size={16} />
+                    </button>
+                  )}
+                  {/* 新增：合成预览按钮 */}
+                  {canCreatePreview(task) && (
+                    <button
+                      className="btn-table-action preview"
+                      onClick={() => handleCreatePreview(task)}
+                      title="合成当前进度"
+                      disabled={task.isMergingPreview}
+                    >
+                      <Film size={16} />
+                    </button>
+                  )}
+
+                  {/* 新增：查看预览按钮 */}
+                  {task.previews && task.previews.length > 0 && (
+                    <button
+                      className="btn-table-action"
+                      onClick={() => openPreview(task.previews![task.previews!.length - 1].path)}
+                      title={`查看预览 (${task.previews!.length}个)`}
+                    >
+                      <Eye size={16} />
                     </button>
                   )}
                 </div>
