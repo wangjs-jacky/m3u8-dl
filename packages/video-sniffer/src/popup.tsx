@@ -6,6 +6,7 @@ function IndexPopup() {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [filter, setFilter] = useState<FilterType>('all')
   const [currentTabUrl, setCurrentTabUrl] = useState<string>('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   // 加载视频列表
   const loadVideos = async () => {
@@ -114,6 +115,32 @@ function IndexPopup() {
     return url.substring(0, maxLen) + '...'
   }
 
+  // 切换选中状态
+  const toggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedIds(newSelected)
+  }
+
+  // 生成文件名
+  const generateFilename = (video: VideoItem) => {
+    const timestamp = new Date(video.timestamp).toISOString().slice(0, 10)
+    return `video_${timestamp}_${video.id.slice(0, 6)}`
+  }
+
+  // 批量下载选中项
+  const downloadSelected = async () => {
+    const selectedVideos = filteredVideos.filter(v => selectedIds.has(v.id))
+    for (const video of selectedVideos) {
+      await download(video.url, generateFilename(video))
+    }
+    setSelectedIds(new Set())
+  }
+
   return (
     <div className="popup-container">
       <header className="header">
@@ -128,6 +155,13 @@ function IndexPopup() {
           <option value="mp4">MP4</option>
           <option value="currentTab">当前页面</option>
         </select>
+        <button
+          className="btn-batch"
+          onClick={downloadSelected}
+          disabled={selectedIds.size === 0}
+        >
+          下载选中 ({selectedIds.size})
+        </button>
         <button className="btn-clear" onClick={clearAll}>清空</button>
       </div>
 
@@ -141,6 +175,12 @@ function IndexPopup() {
           filteredVideos.map(v => (
             <div key={v.id} className="video-item">
               <div className="video-header">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(v.id)}
+                  onChange={() => toggleSelect(v.id)}
+                  className="checkbox"
+                />
                 <span className={`type-badge ${v.type}`}>{v.type.toUpperCase()}</span>
                 <span className="time">{formatTime(v.timestamp)}</span>
                 <button className="btn-delete" onClick={() => deleteItem(v.id)}>×</button>

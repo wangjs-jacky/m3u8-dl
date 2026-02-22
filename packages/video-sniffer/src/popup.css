@@ -210,3 +210,53 @@ body {
 .video-list::-webkit-scrollbar-thumb:hover {
   background: #e94560;
 }
+
+/* 复选框样式 */
+.checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #e94560;
+}
+
+/* 批量下载按钮 */
+.btn-batch {
+  padding: 6px 12px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.btn-batch:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.btn-batch:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
+/* Toast 提示样式 */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 1000;
+  animation: fadeInOut 2s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0; }
+  20%, 80% { opacity: 1; }
+}
