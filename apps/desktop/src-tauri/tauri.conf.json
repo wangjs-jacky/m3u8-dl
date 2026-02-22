@@ -44,11 +44,7 @@
   },
   "plugins": {
     "shell": {
-      "sidecar": true,
       "open": true
-    },
-    "notification": {
-      "all": true
     }
   }
 }

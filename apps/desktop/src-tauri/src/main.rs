@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::process::Command as OsCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -10,11 +11,43 @@ use tauri_plugin_shell::ShellExt;
 
 static QUIT_FLAG: AtomicBool = AtomicBool::new(false);
 
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    println!("reveal_in_finder called with path: {}", path);
+    #[cfg(target_os = "macos")]
+    {
+        let output = OsCommand::new("open")
+            .args(["-R", &path])
+            .output()
+            .map_err(|e| format!("Failed to execute open command: {}", e))?;
+        println!("open command output: {:?}", output);
+        if !output.status.success() {
+            return Err(format!("open command failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        OsCommand::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        OsCommand::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 启动 Sidecar
             let shell = app.shell();
@@ -34,7 +67,7 @@ fn main() {
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .menu_on_left_click(false)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -75,6 +108,7 @@ fn main() {
                 }
             }
         })
+        .invoke_handler(tauri::generate_handler![reveal_in_finder])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

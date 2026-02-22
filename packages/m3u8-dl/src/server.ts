@@ -190,6 +190,28 @@ app.get('/api/downloads', (_req, res) => {
 });
 
 /**
+ * 删除单个任务
+ */
+app.delete('/api/download/:id', (req, res) => {
+  const { id } = req.params;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '任务不存在' });
+    return;
+  }
+
+  // 如果任务正在进行，先取消
+  if (downloaders[id] && ['downloading', 'downloading_key', 'merging', 'pending'].includes(downloads[id].status)) {
+    downloaders[id].cancel();
+  }
+
+  delete downloads[id];
+  delete downloaders[id];
+
+  res.json({ status: 'deleted' });
+});
+
+/**
  * 清除已完成/失败的任务
  */
 app.delete('/api/downloads/clear', (_req, res) => {

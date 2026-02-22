@@ -2,7 +2,7 @@
  * TypeScript 类型定义
  */
 /** 下载状态 */
-export type DownloadStatus = 'pending' | 'downloading_key' | 'downloading' | 'merging' | 'completed' | 'error' | 'cancelled';
+export type DownloadStatus = 'pending' | 'downloading_key' | 'downloading' | 'paused' | 'merging' | 'completed' | 'error' | 'cancelled';
 /** 下载状态信息 */
 export interface DownloadState {
     id: string;

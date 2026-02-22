@@ -6,9 +6,9 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w m3u8-dl",
-    "dev": "npm run dev -w m3u8-dl",
-    "server": "npm run server -w m3u8-dl",
+    "build": "npm run build -w @wangjs-jacky/m3u8-dl",
+    "dev": "npm run dev -w @wangjs-jacky/m3u8-dl",
+    "server": "npm run server -w @wangjs-jacky/m3u8-dl",
     "sniffer:dev": "npm run dev -w @wangjs-jacky/video-sniffer",
     "sniffer:build": "npm run build -w @wangjs-jacky/video-sniffer",
     "desktop:dev": "npm run tauri:dev -w @wangjs-jacky/m3u8-downloader-desktop",

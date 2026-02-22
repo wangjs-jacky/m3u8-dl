@@ -51,6 +51,9 @@ const http_1 = require("./http");
 class DecryptingDownloader {
     constructor(id, options, progressCallback) {
         this.isRunning = true;
+        this.paused = false;
+        this.pausePromise = null;
+        this.pauseResolve = null;
         this.id = id;
         this.options = {
             concurrency: 8,
@@ -108,6 +111,68 @@ class DecryptingDownloader {
             decipher.final(),
         ]);
         return decrypted;
+    }
+    /**
+     * 解析错误类型和 HTTP 状态码
+     */
+    parseError(errorMsg) {
+        // 提取 HTTP 状态码
+        const httpMatch = errorMsg.match(/HTTP (\d+)/);
+        if (httpMatch) {
+            const code = parseInt(httpMatch[1], 10);
+            if (code === 403)
+                return { code: 403, type: 'forbidden' };
+            if (code === 404)
+                return { code: 404, type: 'not_found' };
+            if (code === 401)
+                return { code: 401, type: 'unauthorized' };
+            if (code >= 500)
+                return { code, type: 'server_error' };
+            return { code, type: 'http_error' };
+        }
+        // 网络错误
+        if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('ENOTFOUND')) {
+            return { type: 'network' };
+        }
+        if (errorMsg.includes('ETIMEDOUT') || errorMsg.includes('timeout')) {
+            return { type: 'timeout' };
+        }
+        if (errorMsg.includes('proxy') || errorMsg.includes('PROXY')) {
+            return { type: 'proxy' };
+        }
+        return { type: 'unknown' };
+    }
+    /**
+     * 生成错误排查建议
+     */
+    generateErrorHint(errorStats, sampleErrors) {
+        const hints = [];
+        if (errorStats.has('forbidden')) {
+            hints.push('• 403 禁止访问：可能需要设置正确的 Referer 或 Cookie');
+        }
+        if (errorStats.has('not_found')) {
+            hints.push('• 404 未找到：视频链接可能已过期，请重新获取 m3u8 链接');
+        }
+        if (errorStats.has('unauthorized')) {
+            hints.push('• 401 未授权：需要登录或提供认证信息');
+        }
+        if (errorStats.has('server_error')) {
+            hints.push('• 服务器错误：视频源服务器暂时不可用，请稍后重试');
+        }
+        if (errorStats.has('timeout')) {
+            hints.push('• 连接超时：网络不稳定，请检查网络或降低并发数');
+        }
+        if (errorStats.has('proxy')) {
+            hints.push('• 代理错误：请检查代理设置是否正确');
+        }
+        if (errorStats.has('network')) {
+            hints.push('• 网络错误：无法连接到服务器，请检查网络连接');
+        }
+        // 添加示例错误
+        if (sampleErrors.length > 0) {
+            hints.push(`\n示例错误: ${sampleErrors[0]}`);
+        }
+        return hints.join('\n');
     }
     /**
      * 下载单个分片
@@ -202,9 +267,12 @@ class DecryptingDownloader {
             // 并发下载分片
             const concurrency = this.options.concurrency || 8;
             const downloaded = [];
+            const errorStats = new Map();
+            const sampleErrors = [];
             let completed = 0;
             // 分批下载
             for (let i = 0; i < segments.length; i += concurrency) {
+                await this.waitForResume();
                 if (!this.isRunning) {
                     throw new Error('下载已取消');
                 }
@@ -222,6 +290,14 @@ class DecryptingDownloader {
                         const filename = `seg_${String(result.index).padStart(6, '0')}.ts`;
                         downloaded.push({ index: result.index, file: path.join(tempDir, filename) });
                     }
+                    else if (result.error) {
+                        // 收集错误统计
+                        const { type } = this.parseError(result.error);
+                        errorStats.set(type, (errorStats.get(type) || 0) + 1);
+                        if (sampleErrors.length < 3) {
+                            sampleErrors.push(result.error);
+                        }
+                    }
                     const progress = 15 + Math.floor((completed / segments.length) * 80);
                     this.updateProgress({
                         status: 'downloading',
@@ -232,7 +308,9 @@ class DecryptingDownloader {
             }
             // 检查是否有成功下载的分片
             if (downloaded.length === 0) {
-                throw new Error('没有成功下载任何分片，请检查网络连接或视频链接是否有效');
+                const errorHint = this.generateErrorHint(errorStats, sampleErrors);
+                const failedCount = completed;
+                throw new Error(`所有 ${failedCount} 个分片下载失败。\n\n排查建议:\n${errorHint}`);
             }
             // 排序并获取文件列表
             downloaded.sort((a, b) => a.index - b.index);
@@ -284,6 +362,40 @@ class DecryptingDownloader {
      */
     cancel() {
         this.isRunning = false;
+    }
+    /**
+     * 暂停下载
+     */
+    pause() {
+        if (this.paused) {
+            return; // 防止重复暂停
+        }
+        this.paused = true;
+        this.pausePromise = new Promise(resolve => {
+            this.pauseResolve = resolve;
+        });
+    }
+    /**
+     * 继续下载
+     */
+    resume() {
+        if (!this.paused) {
+            return; // 防止重复恢复
+        }
+        this.paused = false;
+        if (this.pauseResolve) {
+            this.pauseResolve();
+            this.pauseResolve = null;
+            this.pausePromise = null;
+        }
+    }
+    /**
+     * 等待恢复（内部方法）
+     */
+    async waitForResume() {
+        if (this.paused && this.pausePromise) {
+            await this.pausePromise;
+        }
     }
 }
 exports.DecryptingDownloader = DecryptingDownloader;

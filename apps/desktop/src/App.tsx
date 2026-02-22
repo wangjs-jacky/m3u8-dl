@@ -1,10 +1,14 @@
 import { useEffect } from 'react'
 import { useDownloadStore } from './stores/downloadStore'
-import { TaskList } from './components/TaskList'
-import { AddTaskForm } from './components/AddTaskForm'
+import { Sidebar } from './components/Sidebar'
+import { Toolbar } from './components/Toolbar'
+import { TaskTable } from './components/TaskTable'
+import { NewTaskModal } from './components/NewTaskModal'
+import { SettingsModal } from './components/SettingsModal'
+import './App.css'
 
 function App() {
-  const { fetchTasks } = useDownloadStore()
+  const { theme, fetchTasks } = useDownloadStore()
 
   // 启动时获取任务列表
   useEffect(() => {
@@ -14,14 +18,18 @@ function App() {
   }, [fetchTasks])
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>M3U8 视频下载器</h1>
-      </header>
-      <main className="main">
-        <AddTaskForm />
-        <TaskList />
-      </main>
+    <div className={`app theme-${theme}`}>
+      <Toolbar />
+
+      <div className="main-container">
+        <Sidebar />
+        <main className="content">
+          <TaskTable />
+        </main>
+      </div>
+
+      <NewTaskModal />
+      <SettingsModal />
     </div>
   )
 }
