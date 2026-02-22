@@ -191,7 +191,11 @@ export function collectSegmentFiles(dirPath: string): string[] {
 
   const files = fs.readdirSync(dirPath)
     .filter(f => f.endsWith('.ts'))
-    .sort();
+    .sort((a, b) => {
+      const numA = parseInt(a.match(/\d+/)?.[0] ?? '0', 10);
+      const numB = parseInt(b.match(/\d+/)?.[0] ?? '0', 10);
+      return numA - numB;
+    });
 
   return files.map(f => path.join(dirPath, f));
 }
