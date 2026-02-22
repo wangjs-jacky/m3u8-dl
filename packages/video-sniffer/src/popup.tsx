@@ -50,10 +50,37 @@ function IndexPopup() {
     setTimeout(() => btn.textContent = originalText, 1000)
   }
 
+  const API_BASE = 'http://localhost:15151'
+
+  const showToast = (message: string) => {
+    const toast = document.createElement('div')
+    toast.className = 'toast'
+    toast.textContent = message
+    document.body.appendChild(toast)
+    setTimeout(() => toast.remove(), 2000)
+  }
+
   // 一键下载
-  const download = (url: string) => {
-    const downloaderUrl = `http://localhost:5001/?url=${encodeURIComponent(url)}`
-    chrome.tabs.create({ url: downloaderUrl })
+  const download = async (url: string, filename?: string) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/download/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          output_path: `~/Downloads/${filename || 'video'}.mp4`
+        })
+      })
+
+      if (response.ok) {
+        showToast('已添加到下载队列')
+      } else {
+        const error = await response.json()
+        showToast(`添加失败: ${error.error || '未知错误'}`)
+      }
+    } catch (error) {
+      showToast('无法连接到桌面应用，请确保已启动')
+    }
   }
 
   // 清空列表
