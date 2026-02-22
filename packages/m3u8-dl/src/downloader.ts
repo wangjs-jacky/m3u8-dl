@@ -312,6 +312,9 @@ export class DecryptingDownloader {
    * 暂停下载
    */
   pause(): void {
+    if (this.paused) {
+      return; // 防止重复暂停
+    }
     this.paused = true;
     this.pausePromise = new Promise(resolve => {
       this.pauseResolve = resolve;
@@ -322,6 +325,9 @@ export class DecryptingDownloader {
    * 继续下载
    */
   resume(): void {
+    if (!this.paused) {
+      return; // 防止重复恢复
+    }
     this.paused = false;
     if (this.pauseResolve) {
       this.pauseResolve();
