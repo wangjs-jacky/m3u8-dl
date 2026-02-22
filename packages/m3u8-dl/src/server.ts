@@ -190,6 +190,22 @@ app.get('/api/downloads', (_req, res) => {
 });
 
 /**
+ * 清除已完成/失败的任务
+ */
+app.delete('/api/downloads/clear', (_req, res) => {
+  const clearableStatuses = ['completed', 'error', 'cancelled'];
+
+  for (const id of Object.keys(downloads)) {
+    if (clearableStatuses.includes(downloads[id].status)) {
+      delete downloads[id];
+      delete downloaders[id];
+    }
+  }
+
+  res.json({ status: 'cleared' });
+});
+
+/**
  * 默认路由（返回前端页面）
  */
 app.get('/', (_req, res) => {
