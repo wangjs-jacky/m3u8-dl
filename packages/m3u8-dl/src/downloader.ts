@@ -20,6 +20,9 @@ export class DecryptingDownloader {
   private options: DownloadOptions;
   private progressCallback: ProgressCallback;
   private isRunning: boolean = true;
+  private paused = false;
+  private pausePromise: Promise<void> | null = null;
+  private pauseResolve: (() => void) | null = null;
 
   constructor(id: string, options: DownloadOptions, progressCallback: ProgressCallback) {
     this.id = id;
@@ -214,6 +217,7 @@ export class DecryptingDownloader {
 
       // 分批下载
       for (let i = 0; i < segments.length; i += concurrency) {
+        await this.waitForResume();
         if (!this.isRunning) {
           throw new Error('下载已取消');
         }
@@ -302,5 +306,36 @@ export class DecryptingDownloader {
    */
   cancel(): void {
     this.isRunning = false;
+  }
+
+  /**
+   * 暂停下载
+   */
+  pause(): void {
+    this.paused = true;
+    this.pausePromise = new Promise(resolve => {
+      this.pauseResolve = resolve;
+    });
+  }
+
+  /**
+   * 继续下载
+   */
+  resume(): void {
+    this.paused = false;
+    if (this.pauseResolve) {
+      this.pauseResolve();
+      this.pauseResolve = null;
+      this.pausePromise = null;
+    }
+  }
+
+  /**
+   * 等待恢复（内部方法）
+   */
+  private async waitForResume(): Promise<void> {
+    if (this.paused && this.pausePromise) {
+      await this.pausePromise;
+    }
   }
 }
