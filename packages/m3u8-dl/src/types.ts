@@ -26,6 +26,10 @@ export interface DownloadState {
   error?: string;
   createdAt: string;
   timestamp: string;
+  // 预览相关
+  isMergingPreview?: boolean;
+  previews?: PreviewFile[];
+  lastPreviewAt?: string;
 }
 
 /** 下载选项 */
@@ -35,6 +39,7 @@ export interface DownloadOptions {
   referer?: string;
   concurrency?: number;
   durationLimit?: number; // 分钟
+  previewConfig?: PreviewConfig; // 预览配置
 }
 
 /** M3U8 加密信息 */
@@ -100,9 +105,10 @@ export interface PreviewFile {
 
 /** 增量合并的分片部分 */
 export interface SegmentPart {
+  index: number;          // 部分索引
   dirPath: string;        // 分片目录路径
-  startSegment: number;   // 起始分片索引
-  endSegment: number;     // 结束分片索引
+  segmentCount: number;   // 分片数量
+  segmentIndices: number[]; // 分片索引列表
 }
 
 /** 增量合并选项 */
