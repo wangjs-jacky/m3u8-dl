@@ -15,6 +15,22 @@ export type DownloadStatus =
 
 export type TaskFilter = 'all' | 'downloading' | 'completed' | 'error' | 'paused'
 
+export interface PreviewConfig {
+  autoMerge: boolean
+  triggerMode: 'percentage' | 'segments' | 'disabled'
+  triggerValue: number
+  fileMode: 'temporary' | 'keep' | 'ask'
+}
+
+export interface PreviewFile {
+  file: string
+  path: string
+  segments: number
+  duration: string
+  createdAt: string
+  mode: 'temporary' | 'keep' | 'ask'
+}
+
 export interface DownloadTask {
   id: string
   url: string
@@ -30,6 +46,10 @@ export interface DownloadTask {
   eta?: string
   totalSize?: number
   downloadedSize?: number
+  // 预览相关字段
+  previews?: PreviewFile[]
+  isMergingPreview?: boolean
+  lastPreviewAt?: string
 }
 
 export interface AppSettings {
@@ -40,6 +60,7 @@ export interface AppSettings {
   autoRetry: boolean
   retryCount: number
   retryDelay: number
+  previewConfig: PreviewConfig
 }
 
 interface DownloadStore {
@@ -97,6 +118,9 @@ interface DownloadStore {
   // 批量添加
   addBatchTasks: (urls: string[], outputPath: string, referer?: string) => Promise<void>
 
+  // 预览方法
+  createPreview: (id: string, mode?: 'temporary' | 'keep') => Promise<void>
+
   // 辅助方法
   getFilteredTasks: () => DownloadTask[]
   getTaskCounts: () => { all: number; downloading: number; completed: number; error: number; paused: number }
@@ -110,6 +134,12 @@ const defaultSettings: AppSettings = {
   autoRetry: true,
   retryCount: 3,
   retryDelay: 5,
+  previewConfig: {
+    autoMerge: false,
+    triggerMode: 'disabled',
+    triggerValue: 25,
+    fileMode: 'ask',
+  },
 }
 
 export const useDownloadStore = create<DownloadStore>()(
@@ -285,6 +315,26 @@ export const useDownloadStore = create<DownloadStore>()(
           await Promise.all(promises)
         } finally {
           set({ isLoading: false })
+        }
+      },
+
+      // 预览方法
+      createPreview: async (id, mode = 'temporary') => {
+        try {
+          const response = await fetch(`${API_BASE}/api/download/${id}/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+          })
+          if (response.ok) {
+            await get().fetchTasks()
+          } else {
+            const error = await response.json()
+            throw new Error(error.error || '创建预览失败')
+          }
+        } catch (error) {
+          console.error('Failed to create preview:', error)
+          throw error
         }
       },
 
