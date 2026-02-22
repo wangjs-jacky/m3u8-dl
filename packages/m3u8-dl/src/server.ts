@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { DecryptingDownloader } from './downloader';
-import { DownloadState } from './types';
+import { DownloadState, PreviewConfig, PreviewFileMode } from './types';
 
 const app = express();
 app.use(cors());
@@ -36,7 +36,7 @@ if (fs.existsSync(frontendPath)) {
  * 启动下载
  */
 app.post('/api/download/start', (req, res) => {
-  const { url, output_path, referer, max_workers, duration_limit } = req.body;
+  const { url, output_path, referer, max_workers, duration_limit, preview_config } = req.body;
 
   if (!url || !output_path) {
     res.status(400).json({ error: '缺少必要参数' });
@@ -61,6 +61,17 @@ app.post('/api/download/start', (req, res) => {
 
   const downloadId = generateId();
 
+  // 解析预览配置
+  let previewConfig: PreviewConfig | undefined;
+  if (preview_config) {
+    previewConfig = {
+      autoMerge: preview_config.auto_merge ?? false,
+      triggerMode: preview_config.trigger_mode ?? 'disabled',
+      triggerValue: preview_config.trigger_value ?? 25,
+      fileMode: preview_config.file_mode ?? 'ask',
+    };
+  }
+
   // 初始化下载状态
   downloads[downloadId] = {
     id: downloadId,
@@ -82,6 +93,7 @@ app.post('/api/download/start', (req, res) => {
       referer: referer || '',
       concurrency: max_workers || 8,
       durationLimit: duration_limit,
+      previewConfig,
     },
     (state) => {
       // 更新下载状态
@@ -225,6 +237,88 @@ app.delete('/api/downloads/clear', (_req, res) => {
   }
 
   res.json({ status: 'cleared' });
+});
+
+/**
+ * 手动触发预览合成
+ */
+app.post('/api/download/:id/preview', async (req, res) => {
+  const { id } = req.params;
+  const { mode } = req.body;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '下载不存在' });
+    return;
+  }
+
+  const downloader = downloaders[id];
+  if (!downloader) {
+    res.status(400).json({ error: '下载器不存在' });
+    return;
+  }
+
+  try {
+    // 处理 fileMode，如果是 'ask' 则默认使用 'temporary'
+    let fileMode: 'temporary' | 'keep' = 'temporary';
+    if (mode === 'keep') {
+      fileMode = 'keep';
+    }
+    const preview = await downloader.createPreview(fileMode);
+
+    if (!preview) {
+      res.status(400).json({ error: '无法创建预览文件' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      previewFile: preview.path,
+      segments: preview.segments,
+      duration: preview.duration,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * 获取预览文件列表
+ */
+app.get('/api/download/:id/preview', (req, res) => {
+  const { id } = req.params;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '下载不存在' });
+    return;
+  }
+
+  const downloader = downloaders[id];
+  const previews = downloader ? downloader.getPreviews() : (downloads[id].previews || []);
+
+  res.json({ previews });
+});
+
+/**
+ * 获取最新预览文件路径
+ */
+app.get('/api/download/:id/preview/latest', (req, res) => {
+  const { id } = req.params;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '下载不存在' });
+    return;
+  }
+
+  const downloader = downloaders[id];
+  const previews = downloader ? downloader.getPreviews() : (downloads[id].previews || []);
+
+  if (previews.length === 0) {
+    res.status(404).json({ error: '没有预览文件' });
+    return;
+  }
+
+  const latest = previews[previews.length - 1];
+  res.json({ previewFile: latest });
 });
 
 /**
