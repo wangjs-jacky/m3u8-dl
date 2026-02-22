@@ -97,3 +97,18 @@ export interface PreviewFile {
   createdAt: string;      // 创建时间
   mode: PreviewFileMode;  // 文件模式
 }
+
+/** 增量合并的分片部分 */
+export interface SegmentPart {
+  dirPath: string;        // 分片目录路径
+  startSegment: number;   // 起始分片索引
+  endSegment: number;     // 结束分片索引
+}
+
+/** 增量合并选项 */
+export interface IncrementalMergeOptions {
+  parts: SegmentPart[];   // 要合并的分片部分
+  outputPath: string;     // 输出文件路径
+  tempDir: string;        // 临时目录
+  previewDir: string;     // 预览文件目录
+}
