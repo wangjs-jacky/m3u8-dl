@@ -9,6 +9,7 @@ export type DownloadStatus =
   | 'pending'
   | 'downloading_key'
   | 'downloading'
+  | 'paused'
   | 'merging'
   | 'completed'
   | 'error'

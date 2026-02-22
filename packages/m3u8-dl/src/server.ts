@@ -141,6 +141,48 @@ app.post('/api/download/:id/cancel', (req, res) => {
 });
 
 /**
+ * 暂停下载
+ */
+app.post('/api/download/:id/pause', (req, res) => {
+  const { id } = req.params;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '下载不存在' });
+    return;
+  }
+
+  if (downloaders[id]) {
+    downloaders[id].pause();
+  }
+
+  downloads[id].status = 'paused';
+  downloads[id].message = '已暂停';
+
+  res.json({ status: 'paused' });
+});
+
+/**
+ * 继续下载
+ */
+app.post('/api/download/:id/resume', (req, res) => {
+  const { id } = req.params;
+
+  if (!downloads[id]) {
+    res.status(404).json({ error: '下载不存在' });
+    return;
+  }
+
+  if (downloaders[id]) {
+    downloaders[id].resume();
+  }
+
+  downloads[id].status = 'downloading';
+  downloads[id].message = '继续下载中...';
+
+  res.json({ status: 'resumed' });
+});
+
+/**
  * 列出所有下载
  */
 app.get('/api/downloads', (_req, res) => {
@@ -163,6 +205,8 @@ app.get('/', (_req, res) => {
         <li>POST /api/download/start - 启动下载</li>
         <li>GET /api/download/:id/status - 获取状态</li>
         <li>POST /api/download/:id/cancel - 取消下载</li>
+        <li>POST /api/download/:id/pause - 暂停下载</li>
+        <li>POST /api/download/:id/resume - 继续下载</li>
         <li>GET /api/downloads - 列出所有下载</li>
       </ul>
     `);
