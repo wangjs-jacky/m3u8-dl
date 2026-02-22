@@ -604,7 +604,7 @@ export class DecryptingDownloader {
   private async mergePreviewFile(mode: 'temporary' | 'keep'): Promise<PreviewFile> {
     const previewIndex = this.previews.length + 1;
     const previewFileName = mode === 'temporary'
-      ? `preview_temp_${Date.now()}.mp4`
+      ? `preview_temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
       : `preview_${String(previewIndex).padStart(3, '0')}.mp4`;
     const previewPath = path.join(this.previewDir, previewFileName);
 
