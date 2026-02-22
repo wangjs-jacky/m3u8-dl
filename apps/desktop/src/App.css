@@ -943,3 +943,23 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* 表单下拉框样式 */
+.form-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.form-select:focus {
+  border-color: var(--primary-color);
+}
+
+.theme-dark .form-select {
+  background: var(--bg-tertiary);
+}

@@ -1,5 +1,5 @@
 import { open } from '@tauri-apps/plugin-dialog'
-import { Sun, Moon, FolderOpen } from 'lucide-react'
+import { Sun, Moon, FolderOpen, Film } from 'lucide-react'
 import { useDownloadStore } from '../stores/downloadStore'
 
 export function SettingsModal() {
@@ -197,6 +197,110 @@ export function SettingsModal() {
                 />
               </div>
             )}
+          </div>
+
+          {/* 分段合成设置 */}
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Film size={16} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+              分段合成
+            </div>
+
+            <div className="settings-row">
+              <div className="settings-label">
+                <span className="settings-label-text">自动合成预览</span>
+                <span className="settings-label-hint">下载时自动生成可播放的预览文件</span>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={settings.previewConfig.autoMerge}
+                  onChange={(e) => updateSettings({
+                    previewConfig: { ...settings.previewConfig, autoMerge: e.target.checked }
+                  })}
+                />
+                <span className="switch-slider" />
+              </label>
+            </div>
+
+            {settings.previewConfig.autoMerge && (
+              <>
+                <div className="settings-row">
+                  <div className="settings-label">
+                    <span className="settings-label-text">触发条件</span>
+                    <span className="settings-label-hint">何时自动合成预览</span>
+                  </div>
+                  <select
+                    className="form-select"
+                    value={settings.previewConfig.triggerMode}
+                    onChange={(e) => updateSettings({
+                      previewConfig: {
+                        ...settings.previewConfig,
+                        triggerMode: e.target.value as 'percentage' | 'segments'
+                      }
+                    })}
+                    style={{ width: '120px' }}
+                  >
+                    <option value="percentage">按百分比</option>
+                    <option value="segments">按分片数</option>
+                  </select>
+                </div>
+
+                <div className="settings-row">
+                  <div className="settings-label">
+                    <span className="settings-label-text">
+                      {settings.previewConfig.triggerMode === 'percentage' ? '合成间隔 (%)' : '合成间隔 (分片数)'}
+                    </span>
+                    <span className="settings-label-hint">
+                      {settings.previewConfig.triggerMode === 'percentage'
+                        ? '每下载多少百分比合成一次'
+                        : '每下载多少分片合成一次'}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    className="form-input form-input-number"
+                    value={settings.previewConfig.triggerValue}
+                    onChange={(e) => updateSettings({
+                      previewConfig: {
+                        ...settings.previewConfig,
+                        triggerValue: Math.max(
+                          10,
+                          Math.min(
+                            settings.previewConfig.triggerMode === 'percentage' ? 50 : 500,
+                            parseInt(e.target.value) || 25
+                          )
+                        )
+                      }
+                    })}
+                    min={10}
+                    max={settings.previewConfig.triggerMode === 'percentage' ? 50 : 500}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="settings-row">
+              <div className="settings-label">
+                <span className="settings-label-text">预览文件处理</span>
+                <span className="settings-label-hint">下载完成后的预览文件处理方式</span>
+              </div>
+              <select
+                className="form-select"
+                value={settings.previewConfig.fileMode}
+                onChange={(e) => updateSettings({
+                  previewConfig: {
+                    ...settings.previewConfig,
+                    fileMode: e.target.value as 'temporary' | 'keep' | 'ask'
+                  }
+                })}
+                style={{ width: '140px' }}
+              >
+                <option value="ask">每次询问</option>
+                <option value="temporary">临时预览（自动删除）</option>
+                <option value="keep">独立保存</option>
+              </select>
+            </div>
           </div>
         </div>
 
