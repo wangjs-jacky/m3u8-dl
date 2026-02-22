@@ -1,0 +1,152 @@
+/**
+ * 共享的 HTTP 客户端配置
+ */
+
+import axios, { AxiosInstance } from 'axios';
+import fetch from 'node-fetch';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+
+/**
+ * 获取代理 Agent
+ */
+export function getProxyAgent(): any {
+  const proxyUrl =
+    process.env.ALL_PROXY ||
+    process.env.all_proxy ||
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy;
+
+  if (!proxyUrl) {
+    return undefined;
+  }
+
+  console.log(`[Proxy] 检测到代理: ${proxyUrl}`);
+
+  // SOCKS 代理
+  if (proxyUrl.startsWith('socks')) {
+    return new SocksProxyAgent(proxyUrl);
+  }
+
+  // HTTP/HTTPS 代理
+  if (proxyUrl.startsWith('http')) {
+    return new HttpsProxyAgent(proxyUrl);
+  }
+
+  return undefined;
+}
+
+/**
+ * 使用 fetch 发送请求（支持 SOCKS 代理）
+ */
+export async function fetchWithProxy(
+  url: string,
+  options: {
+    headers?: Record<string, string>;
+    timeout?: number;
+  } = {}
+): Promise<{ data: string; status: number }> {
+  const agent = getProxyAgent();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
+
+  try {
+    const fetchOptions: any = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        ...options.headers,
+      },
+      signal: controller.signal,
+    };
+
+    if (agent) {
+      fetchOptions.agent = agent;
+    }
+
+    const response = await fetch(url, fetchOptions);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.text();
+    return { data, status: response.status };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * 使用 fetch 下载二进制数据（支持 SOCKS 代理）
+ */
+export async function fetchBufferWithProxy(
+  url: string,
+  options: {
+    headers?: Record<string, string>;
+    timeout?: number;
+  } = {}
+): Promise<Buffer> {
+  const agent = getProxyAgent();
+  const timeout = options.timeout || 30000;
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Request timeout after ${timeout}ms`));
+    }, timeout);
+
+    const fetchOptions: any = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        ...options.headers,
+      },
+    };
+
+    if (agent) {
+      fetchOptions.agent = agent;
+    }
+
+    fetch(url, fetchOptions)
+      .then((response) => {
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then((arrayBuffer) => {
+        resolve(Buffer.from(arrayBuffer));
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+}
+
+/**
+ * 创建配置好的 axios 实例（不使用代理，用于非代理场景）
+ */
+export function createAxiosInstance(options: {
+  referer?: string;
+  origin?: string;
+} = {}): AxiosInstance {
+  const agent = getProxyAgent();
+
+  return axios.create({
+    timeout: 30000,
+    maxRedirects: 0,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      'Referer': options.referer || '',
+      'Origin': options.origin || '',
+    },
+    httpAgent: agent,
+    httpsAgent: agent,
+  });
+}
+
+// 全局默认 axios 实例
+export const defaultAxios = createAxiosInstance();

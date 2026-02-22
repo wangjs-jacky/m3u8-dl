@@ -1,0 +1,26 @@
+{
+  "name": "@wangjs-jacky/video-sniffer",
+  "displayName": "Video Sniffer",
+  "version": "1.0.0",
+  "description": "Chrome extension to sniff video resources (M3U8/MP4)",
+  "scripts": {
+    "dev": "plasmo dev",
+    "build": "plasmo build",
+    "package": "plasmo package"
+  },
+  "dependencies": {
+    "plasmo": "^0.89.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.4.0"
+  },
+  "manifest": {
+    "permissions": ["webRequest", "storage", "tabs"],
+    "host_permissions": ["<all_urls>"]
+  }
+}

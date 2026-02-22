@@ -1,0 +1,139 @@
+import { useState, useEffect } from 'react'
+import type { VideoItem, StorageData, FilterType } from './types'
+import './popup.css'
+
+function IndexPopup() {
+  const [videos, setVideos] = useState<VideoItem[]>([])
+  const [filter, setFilter] = useState<FilterType>('all')
+  const [currentTabUrl, setCurrentTabUrl] = useState<string>('')
+
+  // 加载视频列表
+  const loadVideos = async () => {
+    const data = await chrome.storage.local.get('videos') as StorageData
+    setVideos(data.videos || [])
+  }
+
+  // 获取当前标签页 URL
+  const getCurrentTab = async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    setCurrentTabUrl(tab?.url || '')
+  }
+
+  useEffect(() => {
+    loadVideos()
+    getCurrentTab()
+  }, [])
+
+  // 过滤视频列表
+  const filteredVideos = videos.filter(v => {
+    if (filter === 'm3u8') return v.type === 'm3u8'
+    if (filter === 'mp4') return v.type === 'mp4'
+    if (filter === 'currentTab') {
+      try {
+        const videoDomain = new URL(v.pageUrl).hostname
+        const currentDomain = new URL(currentTabUrl).hostname
+        return videoDomain === currentDomain
+      } catch {
+        return false
+      }
+    }
+    return true
+  })
+
+  // 复制链接
+  const copyUrl = async (url: string) => {
+    await navigator.clipboard.writeText(url)
+    // 简单的提示效果
+    const btn = document.activeElement as HTMLElement
+    const originalText = btn.textContent
+    btn.textContent = '已复制!'
+    setTimeout(() => btn.textContent = originalText, 1000)
+  }
+
+  // 一键下载
+  const download = (url: string) => {
+    const downloaderUrl = `http://localhost:5001/?url=${encodeURIComponent(url)}`
+    chrome.tabs.create({ url: downloaderUrl })
+  }
+
+  // 清空列表
+  const clearAll = async () => {
+    await chrome.storage.local.set({ videos: [] })
+    setVideos([])
+    chrome.action.setBadgeText({ text: '' })
+  }
+
+  // 删除单个
+  const deleteItem = async (id: string) => {
+    const updated = videos.filter(v => v.id !== id)
+    await chrome.storage.local.set({ videos: updated })
+    setVideos(updated)
+    chrome.action.setBadgeText({ text: updated.length > 0 ? updated.length.toString() : '' })
+  }
+
+  // 格式化时间
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleString('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  // 截断 URL 显示
+  const truncateUrl = (url: string, maxLen = 50) => {
+    if (url.length <= maxLen) return url
+    return url.substring(0, maxLen) + '...'
+  }
+
+  return (
+    <div className="popup-container">
+      <header className="header">
+        <h1>视频嗅探器</h1>
+        <span className="count">{videos.length} 条记录</span>
+      </header>
+
+      <div className="toolbar">
+        <select value={filter} onChange={(e) => setFilter(e.target.value as FilterType)}>
+          <option value="all">全部</option>
+          <option value="m3u8">M3U8</option>
+          <option value="mp4">MP4</option>
+          <option value="currentTab">当前页面</option>
+        </select>
+        <button className="btn-clear" onClick={clearAll}>清空</button>
+      </div>
+
+      <div className="video-list">
+        {filteredVideos.length === 0 ? (
+          <div className="empty">
+            <p>暂无嗅探到视频资源</p>
+            <p className="hint">浏览包含视频的页面后会自动捕获</p>
+          </div>
+        ) : (
+          filteredVideos.map(v => (
+            <div key={v.id} className="video-item">
+              <div className="video-header">
+                <span className={`type-badge ${v.type}`}>{v.type.toUpperCase()}</span>
+                <span className="time">{formatTime(v.timestamp)}</span>
+                <button className="btn-delete" onClick={() => deleteItem(v.id)}>×</button>
+              </div>
+              <div className="video-url" title={v.url}>
+                {truncateUrl(v.url)}
+              </div>
+              <div className="video-source" title={v.pageUrl}>
+                来源: {truncateUrl(v.pageUrl, 40)}
+              </div>
+              <div className="video-actions">
+                <button className="btn-copy" onClick={() => copyUrl(v.url)}>复制</button>
+                <button className="btn-download" onClick={() => download(v.url)}>下载</button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default IndexPopup
