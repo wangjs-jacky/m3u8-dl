@@ -13,10 +13,10 @@ import { MergeOptions, IncrementalMergeOptions } from './types';
 export async function mergeSegments(options: MergeOptions): Promise<void> {
   const { segmentFiles, outputPath, tempDir } = options;
 
-  // 创建分片列表文件
+  // 创建分片列表文件（使用绝对路径）
   const listFile = path.join(tempDir, 'segments.txt');
   const listContent = segmentFiles
-    .map((file) => `file '${path.basename(file)}'`)
+    .map((file) => `file '${file}'`)  // 使用绝对路径
     .join('\n');
 
   fs.writeFileSync(listFile, listContent, 'utf-8');

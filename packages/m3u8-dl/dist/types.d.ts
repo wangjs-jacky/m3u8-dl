@@ -14,6 +14,13 @@ export interface DownloadState {
     error?: string;
     createdAt: string;
     timestamp: string;
+    referer?: string;
+    totalSegments?: number;
+    downloadedSegments?: number;
+    tempDir?: string;
+    isMergingPreview?: boolean;
+    previews?: PreviewFile[];
+    lastPreviewAt?: string;
 }
 /** 下载选项 */
 export interface DownloadOptions {
@@ -22,6 +29,7 @@ export interface DownloadOptions {
     referer?: string;
     concurrency?: number;
     durationLimit?: number;
+    previewConfig?: PreviewConfig;
 }
 /** M3U8 加密信息 */
 export interface EncryptionInfo {
@@ -53,5 +61,63 @@ export interface MergeOptions {
 export interface HttpConfig {
     headers: Record<string, string>;
     timeout?: number;
+}
+/** 预览合成触发模式 */
+export type PreviewTriggerMode = 'percentage' | 'segments' | 'disabled';
+/** 预览文件处理模式 */
+export type PreviewFileMode = 'temporary' | 'keep' | 'ask';
+/** 预览配置 */
+export interface PreviewConfig {
+    autoMerge: boolean;
+    triggerMode: PreviewTriggerMode;
+    triggerValue: number;
+    fileMode: PreviewFileMode;
+}
+/** 预览文件信息 */
+export interface PreviewFile {
+    file: string;
+    path: string;
+    segments: number;
+    duration: string;
+    createdAt: string;
+    mode: PreviewFileMode;
+}
+/** 增量合并的分片部分 */
+export interface SegmentPart {
+    index: number;
+    dirPath: string;
+    segmentCount: number;
+    segmentIndices: number[];
+}
+/** 增量合并选项 */
+export interface IncrementalMergeOptions {
+    parts: SegmentPart[];
+    outputPath: string;
+    tempDir: string;
+    previewDir: string;
+}
+/** 任务元数据（用于断点续传） */
+export interface TaskMeta {
+    version: number;
+    id: string;
+    url: string;
+    baseUrl: string;
+    outputPath: string;
+    totalSegments: number;
+    downloadedSegments: number[];
+    createdAt: string;
+    keyUri?: string;
+    keyData?: string;
+    iv?: string;
+    referer?: string;
+    concurrency?: number;
+    targetDuration?: number;
+    previewConfig?: PreviewConfig;
+}
+/** 中断任务信息 */
+export interface InterruptedTask {
+    tempDir: string;
+    meta: TaskMeta;
+    progress: number;
 }
 //# sourceMappingURL=types.d.ts.map

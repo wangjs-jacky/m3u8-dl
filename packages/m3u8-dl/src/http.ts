@@ -8,9 +8,49 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 /**
+ * 检查 URL 是否应该绕过代理
+ */
+function shouldBypassProxy(url: string): boolean {
+  const noProxy = process.env.NO_PROXY || process.env.no_proxy || '';
+  if (!noProxy) {
+    return false;
+  }
+
+  const noProxyItems = noProxy.split(',').map(s => s.trim());
+  const hostname = new URL(url).hostname;
+
+  for (const item of noProxyItems) {
+    // 完全匹配
+    if (item === hostname) {
+      return true;
+    }
+    // 域名匹配（如 .example.com 匹配 foo.example.com）
+    if (item.startsWith('.') && hostname.endsWith(item.substring(1))) {
+      return true;
+    }
+    // 域名后缀匹配
+    if (hostname.endsWith('.' + item)) {
+      return true;
+    }
+    // 通配符匹配
+    if (item === '*') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * 获取代理 Agent
  */
-export function getProxyAgent(): any {
+export function getProxyAgent(targetUrl?: string): any {
+  // 如果提供了目标 URL，检查是否应该绕过代理
+  if (targetUrl && shouldBypassProxy(targetUrl)) {
+    console.log(`[Proxy] 绕过代理: ${targetUrl}`);
+    return undefined;
+  }
+
   const proxyUrl =
     process.env.ALL_PROXY ||
     process.env.all_proxy ||
@@ -48,7 +88,7 @@ export async function fetchWithProxy(
     timeout?: number;
   } = {}
 ): Promise<{ data: string; status: number }> {
-  const agent = getProxyAgent();
+  const agent = getProxyAgent(url);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
@@ -89,7 +129,7 @@ export async function fetchBufferWithProxy(
     timeout?: number;
   } = {}
 ): Promise<Buffer> {
-  const agent = getProxyAgent();
+  const agent = getProxyAgent(url);
   const timeout = options.timeout || 30000;
 
   return new Promise((resolve, reject) => {
@@ -127,13 +167,14 @@ export async function fetchBufferWithProxy(
 }
 
 /**
- * 创建配置好的 axios 实例（不使用代理，用于非代理场景）
+ * 创建配置好的 axios 实例（支持代理和 NO_PROXY）
  */
 export function createAxiosInstance(options: {
   referer?: string;
   origin?: string;
+  targetUrl?: string; // 用于判断是否绕过代理
 } = {}): AxiosInstance {
-  const agent = getProxyAgent();
+  const agent = getProxyAgent(options.targetUrl);
 
   return axios.create({
     timeout: 30000,

@@ -12,6 +12,7 @@ export function NewTaskModal() {
 
   const [url, setUrl] = useState('')
   const [outputPath, setOutputPath] = useState(settings.defaultOutputPath)
+  const [filename, setFilename] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [referer, setReferer] = useState('')
 
@@ -26,12 +27,16 @@ export function NewTaskModal() {
     e.preventDefault()
     if (!url.trim()) return
 
-    const filename = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const fullPath = `${outputPath}/${filename}.mp4`
+    // 使用用户输入的文件名，或生成时间戳文件名
+    const finalFilename = filename.trim()
+      ? filename.trim().replace(/\.mp4$/i, '') // 移除可能的后缀
+      : new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const fullPath = `${outputPath}/${finalFilename}.mp4`
 
     try {
       await startDownload(url.trim(), fullPath, referer.trim() || undefined)
       setUrl('')
+      setFilename('')
       setReferer('')
       closeNewTaskModal()
     } catch (error) {
@@ -107,7 +112,21 @@ export function NewTaskModal() {
                   浏览
                 </button>
               </div>
-              <div className="form-hint">文件将自动以时间戳命名</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">文件名（可选）</label>
+              <div className="form-input-group">
+                <input
+                  type="text"
+                  className="form-input"
+                  value={filename}
+                  onChange={(e) => setFilename(e.target.value)}
+                  placeholder="留空则自动以时间戳命名"
+                  disabled={isLoading}
+                />
+                <span className="form-input-suffix">.mp4</span>
+              </div>
             </div>
 
             <button

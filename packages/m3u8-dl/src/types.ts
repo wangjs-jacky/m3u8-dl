@@ -26,6 +26,13 @@ export interface DownloadState {
   error?: string;
   createdAt: string;
   timestamp: string;
+  // 请求信息
+  referer?: string;
+  // 分片信息
+  totalSegments?: number;
+  downloadedSegments?: number;
+  // 临时目录（用于打开分片文件夹）
+  tempDir?: string;
   // 预览相关
   isMergingPreview?: boolean;
   previews?: PreviewFile[];
@@ -117,4 +124,33 @@ export interface IncrementalMergeOptions {
   outputPath: string;     // 输出文件路径
   tempDir: string;        // 临时目录
   previewDir: string;     // 预览文件目录
+}
+
+/** 任务元数据（用于断点续传） */
+export interface TaskMeta {
+  version: number;                    // 元数据版本
+  id: string;                         // 任务 ID
+  url: string;                        // M3U8 URL
+  baseUrl: string;                    // M3U8 基础 URL
+  outputPath: string;                 // 输出文件路径
+  totalSegments: number;              // 总分片数
+  downloadedSegments: number[];       // 已下载的分片索引
+  createdAt: string;                  // 创建时间
+  // 加密信息
+  keyUri?: string;                    // 密钥 URL
+  keyData?: string;                   // 密钥数据（Base64）
+  iv?: string;                        // IV
+  // 请求信息
+  referer?: string;                   // Referer
+  concurrency?: number;               // 并发数
+  // 其他
+  targetDuration?: number;            // 分片目标时长
+  previewConfig?: PreviewConfig;      // 预览配置
+}
+
+/** 中断任务信息 */
+export interface InterruptedTask {
+  tempDir: string;                    // 临时目录路径
+  meta: TaskMeta;                     // 任务元数据
+  progress: number;                   // 进度百分比
 }

@@ -1,5 +1,5 @@
 /**
- * 下载器核心模块 - 支持 AES-128 解密
+ * 下载器核心模块 - 支持 AES-128 解密和断点续传
  */
 
 import * as crypto from 'crypto';
@@ -9,11 +9,20 @@ import * as os from 'os';
 import { URL } from 'url';
 import {
   DownloadOptions, DownloadState, ProgressCallback, ParsedPlaylist,
-  PreviewConfig, PreviewFile, SegmentPart
+  PreviewConfig, PreviewFile, TaskMeta, SegmentInfo
 } from './types';
-import { mergeSegments, mergeSegmentsIncremental, estimateDuration, checkFFmpeg } from './merger';
+import { mergeSegments, estimateDuration, checkFFmpeg } from './merger';
 import { parseM3U8FromUrl } from './parser';
 import { fetchBufferWithProxy, getProxyAgent } from './http';
+
+/** 临时目录前缀 */
+const TEMP_DIR_PREFIX = '.temp_segments_';
+
+/** 元数据文件名 */
+const META_FILE = 'task_meta.json';
+
+/** 当前元数据版本 */
+const META_VERSION = 1;
 
 /**
  * AES-128 解密下载器
@@ -27,13 +36,20 @@ export class DecryptingDownloader {
   private pausePromise: Promise<void> | null = null;
   private pauseResolve: (() => void) | null = null;
 
+  // 目录结构
+  private baseTempDir: string = '';
+  private chunksDir: string = '';      // 分片目录（所有分片直接放在这里）
+  private previewDir: string = '';     // 预览文件目录
+
+  // 下载状态
+  private downloadedIndices: Set<number> = new Set(); // 已下载的分片索引
+  private keyBuffer: Buffer | null = null;            // 解密密钥
+  private ivString: string = '';                      // IV 字符串
+  private baseUrl: string = '';                       // M3U8 基础 URL
+  private segments: SegmentInfo[] = [];               // 分片列表
+
   // 预览相关属性
   private previewConfig: PreviewConfig;
-  private segmentParts: SegmentPart[] = [];
-  private currentPartIndex: number = 1;
-  private currentPartDir: string = '';
-  private baseTempDir: string = '';
-  private previewDir: string = '';
   private previews: PreviewFile[] = [];
   private totalSegments: number = 0;
   private avgSegmentDuration: number = 6;
@@ -68,13 +84,69 @@ export class DecryptingDownloader {
   }
 
   /**
+   * 保存任务元数据
+   */
+  private saveMeta(): void {
+    if (!this.baseTempDir) return;
+
+    const meta: TaskMeta = {
+      version: META_VERSION,
+      id: this.id,
+      url: this.options.url,
+      baseUrl: this.baseUrl,
+      outputPath: this.options.outputPath,
+      totalSegments: this.totalSegments,
+      downloadedSegments: Array.from(this.downloadedIndices).sort((a, b) => a - b),
+      createdAt: new Date().toISOString(),
+      keyUri: undefined,
+      keyData: this.keyBuffer ? this.keyBuffer.toString('base64') : undefined,
+      iv: this.ivString || undefined,
+      referer: this.options.referer,
+      concurrency: this.options.concurrency,
+      targetDuration: this.avgSegmentDuration,
+      previewConfig: this.previewConfig,
+    };
+
+    const metaPath = path.join(this.baseTempDir, META_FILE);
+    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+    console.log(`[${this.id}] 保存元数据: ${metaPath}`);
+  }
+
+  /**
+   * 加载任务元数据
+   */
+  static loadMeta(tempDir: string): TaskMeta | null {
+    const metaPath = path.join(tempDir, META_FILE);
+    if (!fs.existsSync(metaPath)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(metaPath, 'utf-8');
+      const meta = JSON.parse(content) as TaskMeta;
+      console.log(`[Loader] 加载元数据: ${metaPath}, 版本: ${meta.version}, 已下载: ${meta.downloadedSegments.length}/${meta.totalSegments}`);
+      return meta;
+    } catch (error) {
+      console.error(`[Loader] 加载元数据失败: ${error}`);
+      return null;
+    }
+  }
+
+  /**
+   * 获取临时目录路径
+   */
+  static getTempDir(id: string, outputDir: string): string {
+    return path.join(outputDir, `${TEMP_DIR_PREFIX}${id}`);
+  }
+
+  /**
    * 下载 AES-128 密钥
    */
   private async downloadKey(keyUrl: string): Promise<Buffer> {
     this.updateProgress({
       status: 'downloading_key',
       message: '下载密钥...',
-      progress: 10,
+      progress: 0,
     });
 
     console.log(`[${this.id}] 下载密钥: ${keyUrl}`);
@@ -180,38 +252,56 @@ export class DecryptingDownloader {
   }
 
   /**
-   * 下载单个分片
+   * 下载单个分片（带重试，但对 404/403 不重试）
    */
   private async downloadSegment(
     segUrl: string,
     index: number,
     key: Buffer,
     iv: string,
-    tempDir: string
+    tempDir: string,
+    maxRetries: number = 3
   ): Promise<{ index: number; success: boolean; error?: string }> {
     const filename = `seg_${String(index).padStart(6, '0')}.ts`;
     const filepath = path.join(tempDir, filename);
 
-    try {
-      const data = await fetchBufferWithProxy(segUrl, {
-        headers: {
-          'Referer': this.options.referer || '',
-        },
-        timeout: 30000,
-      });
+    let lastError: string = '';
 
-      // 解密分片
-      const decrypted = this.decryptSegment(data, key, iv);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const data = await fetchBufferWithProxy(segUrl, {
+          headers: {
+            'Referer': this.options.referer || '',
+          },
+          timeout: 30000,
+        });
 
-      // 保存解密后的分片
-      fs.writeFileSync(filepath, decrypted);
+        // 解密分片
+        const decrypted = this.decryptSegment(data, key, iv);
 
-      return { index, success: true };
-    } catch (error: any) {
-      const errorMsg = error.message || String(error);
-      console.error(`[${this.id}] 分片 ${index} 失败: ${errorMsg}`);
-      return { index, success: false, error: errorMsg };
+        // 保存解密后的分片
+        fs.writeFileSync(filepath, decrypted);
+
+        return { index, success: true };
+      } catch (error: any) {
+        lastError = error.message || String(error);
+
+        // 404/403 表示链接已过期，重试无效，直接跳过
+        if (lastError.includes('404') || lastError.includes('403')) {
+          console.error(`[${this.id}] 分片 ${index} 链接已过期 (${lastError})，跳过`);
+          return { index, success: false, error: `链接已过期: ${lastError}` };
+        }
+
+        if (attempt < maxRetries) {
+          // 等待一段时间后重试（仅对网络错误等临时问题）
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          console.log(`[${this.id}] 分片 ${index} 重试 ${attempt}/${maxRetries}`);
+        }
+      }
     }
+
+    console.error(`[${this.id}] 分片 ${index} 失败 (${maxRetries} 次重试后): ${lastError}`);
+    return { index, success: false, error: lastError };
   }
 
   /**
@@ -221,6 +311,15 @@ export class DecryptingDownloader {
     let tempDir: string = '';
 
     try {
+      // 打印下载参数（调试用）
+      console.log('='.repeat(60));
+      console.log(`[${this.id}] 开始下载任务`);
+      console.log(`[${this.id}] URL: ${this.options.url}`);
+      console.log(`[${this.id}] 输出路径: ${this.options.outputPath}`);
+      console.log(`[${this.id}] Referer: ${this.options.referer || '(未设置)'}`);
+      console.log(`[${this.id}] 并发数: ${this.options.concurrency}`);
+      console.log('='.repeat(60));
+
       // 检查 FFmpeg
       const ffmpegAvailable = await checkFFmpeg();
       if (!ffmpegAvailable) {
@@ -247,7 +346,7 @@ export class DecryptingDownloader {
       this.updateProgress({
         status: 'pending',
         message: '解析 M3U8...',
-        progress: 5,
+        progress: 0,
       });
 
       // 解析 M3U8
@@ -274,6 +373,11 @@ export class DecryptingDownloader {
       const key = await this.downloadKey(keyUrl);
       const iv = playlist.encryption.iv;
 
+      // 保存关键信息（用于断点续传）
+      this.baseUrl = baseUrl;
+      this.keyBuffer = key;
+      this.ivString = iv;
+
       // 根据时长限制计算分片数
       let segments = [...playlist.segments];
       if (this.options.durationLimit) {
@@ -286,17 +390,19 @@ export class DecryptingDownloader {
         );
       }
 
+      // 保存分片列表
+      this.segments = segments;
+
       // 创建临时目录结构
       tempDir = path.join(outputDir, `.temp_segments_${this.id}`);
       this.baseTempDir = tempDir;
 
-      // 创建分片目录结构
-      const chunksDir = path.join(tempDir, 'chunks');
-      this.currentPartDir = path.join(chunksDir, 'part_current');
+      // 创建分片目录和预览目录
+      this.chunksDir = path.join(tempDir, 'chunks');
       this.previewDir = path.join(tempDir, 'previews');
 
-      if (!fs.existsSync(this.currentPartDir)) {
-        fs.mkdirSync(this.currentPartDir, { recursive: true });
+      if (!fs.existsSync(this.chunksDir)) {
+        fs.mkdirSync(this.chunksDir, { recursive: true });
       }
       if (!fs.existsSync(this.previewDir)) {
         fs.mkdirSync(this.previewDir, { recursive: true });
@@ -306,6 +412,33 @@ export class DecryptingDownloader {
       // 保存总分片数和平均时长
       this.totalSegments = segments.length;
       this.avgSegmentDuration = playlist.targetDuration || 6;
+
+      // 检查已下载的分片（断点续传）
+      const existingFiles = fs.existsSync(this.chunksDir)
+        ? fs.readdirSync(this.chunksDir).filter(f => f.endsWith('.ts'))
+        : [];
+
+      for (const file of existingFiles) {
+        const match = file.match(/seg_(\d+)\.ts/);
+        if (match) {
+          const index = parseInt(match[1], 10);
+          this.downloadedIndices.add(index);
+        }
+      }
+
+      if (this.downloadedIndices.size > 0) {
+        console.log(`[${this.id}] 发现已下载分片: ${this.downloadedIndices.size}/${segments.length}`);
+      }
+
+      // 保存初始元数据
+      this.saveMeta();
+
+      // 更新临时目录路径到状态
+      this.updateProgress({
+        tempDir: this.chunksDir,
+        totalSegments: segments.length,
+        downloadedSegments: this.downloadedIndices.size,
+      });
 
       // 初始化自动合成阈值
       if (this.previewConfig.autoMerge && this.previewConfig.triggerMode === 'percentage') {
@@ -317,40 +450,50 @@ export class DecryptingDownloader {
       this.updateProgress({
         status: 'downloading',
         message: `开始下载 ${segments.length} 个分片...`,
-        progress: 15,
+        progress: 0,
       });
 
       // 并发下载分片
       const concurrency = this.options.concurrency || 8;
-      const downloaded: { index: number; file: string }[] = [];
       const errorStats = new Map<string, number>();
       const sampleErrors: string[] = [];
-      let completed = 0;
+      const failedSegments: number[] = []; // 记录失败的分片索引
 
       // 分批下载
       for (let i = 0; i < segments.length; i += concurrency) {
         await this.waitForResume();
         if (!this.isRunning) {
+          // 保存当前进度后退出
+          this.saveMeta();
           throw new Error('下载已取消');
         }
 
         const batch = segments.slice(i, Math.min(i + concurrency, segments.length));
-        const promises = batch.map((seg) => {
+
+        // 过滤已下载的分片
+        const toDownload = batch.filter(seg => !this.downloadedIndices.has(seg.index));
+
+        if (toDownload.length === 0) {
+          // 这批已全部下载，跳过
+          continue;
+        }
+
+        const promises = toDownload.map((seg) => {
           const segUrl = seg.uri.startsWith('http')
             ? seg.uri
-            : new URL(seg.uri, baseUrl).href;
+            : new URL(seg.uri, this.baseUrl).href;
 
-          return this.downloadSegment(segUrl, seg.index, key, iv, this.currentPartDir);
+          return this.downloadSegment(segUrl, seg.index, this.keyBuffer!, this.ivString, this.chunksDir);
         });
 
         const results = await Promise.all(promises);
 
         for (const result of results) {
-          completed++;
           if (result.success) {
-            const filename = `seg_${String(result.index).padStart(6, '0')}.ts`;
-            downloaded.push({ index: result.index, file: path.join(this.currentPartDir, filename) });
+            this.downloadedIndices.add(result.index);
           } else if (result.error) {
+            // 记录失败的分片，稍后重试
+            failedSegments.push(result.index);
             // 收集错误统计
             const { type } = this.parseError(result.error);
             errorStats.set(type, (errorStats.get(type) || 0) + 1);
@@ -358,42 +501,114 @@ export class DecryptingDownloader {
               sampleErrors.push(result.error);
             }
           }
+        }
 
-          const progress = 15 + Math.floor((completed / segments.length) * 80);
-          this.updateProgress({
-            status: 'downloading',
-            message: `下载中 ${completed}/${segments.length}`,
-            progress,
-          });
+        // 每批下载完成后立即保存元数据（确保进度不丢失）
+        this.saveMeta();
 
-          // 检查自动合成
-          this.checkAutoMerge(completed);
+        // 使用实际已下载的分片数计算进度（0-100%）
+        const progress = Math.floor((this.downloadedIndices.size / segments.length) * 100);
+        this.updateProgress({
+          status: 'downloading',
+          message: `下载中 ${this.downloadedIndices.size}/${segments.length}`,
+          progress,
+          totalSegments: segments.length,
+          downloadedSegments: this.downloadedIndices.size,
+        });
+
+        // 检查自动合成
+        this.checkAutoMerge(this.downloadedIndices.size);
+
+        // 检测是否连续多批下载失败（避免卡死）
+        const totalBatches = Math.ceil(segments.length / concurrency);
+        const currentBatch = Math.floor(i / concurrency) + 1;
+        const failureRate = failedSegments.length / segments.length;
+
+        // 如果已完成 30% 以上，且失败率超过 90%，提前报错
+        if (currentBatch > totalBatches * 0.3 && failureRate > 0.9) {
+          const errorHint = this.generateErrorHint(errorStats, sampleErrors);
+          throw new Error(`下载失败率过高 (${(failureRate * 100).toFixed(0)}%)，可能 M3U8 链接已过期或网络异常。\n\n排查建议:\n${errorHint}`);
         }
       }
 
+      // 对失败的分片进行二次重试
+      if (failedSegments.length > 0) {
+        console.log(`[${this.id}] 开始重试 ${failedSegments.length} 个失败的分片...`);
+        this.updateProgress({
+          status: 'downloading',
+          message: `重试 ${failedSegments.length} 个失败分片...`,
+        });
+
+        const retrySegments = segments.filter(s => failedSegments.includes(s.index));
+        const stillFailed: number[] = [];
+
+        for (let i = 0; i < retrySegments.length; i += concurrency) {
+          await this.waitForResume();
+          if (!this.isRunning) {
+            this.saveMeta();
+            throw new Error('下载已取消');
+          }
+
+          const batch = retrySegments.slice(i, Math.min(i + concurrency, retrySegments.length));
+          const toRetry = batch.filter(seg => !this.downloadedIndices.has(seg.index));
+
+          if (toRetry.length === 0) continue;
+
+          const promises = toRetry.map((seg) => {
+            const segUrl = seg.uri.startsWith('http')
+              ? seg.uri
+              : new URL(seg.uri, this.baseUrl).href;
+            // 二次重试时增加重试次数
+            return this.downloadSegment(segUrl, seg.index, this.keyBuffer!, this.ivString, this.chunksDir, 5);
+          });
+
+          const results = await Promise.all(promises);
+
+          for (const result of results) {
+            if (result.success) {
+              this.downloadedIndices.add(result.index);
+              // 从失败列表中移除
+              const idx = failedSegments.indexOf(result.index);
+              if (idx > -1) failedSegments.splice(idx, 1);
+            } else {
+              stillFailed.push(result.index);
+            }
+          }
+
+          this.saveMeta();
+        }
+
+        // 更新最终失败列表
+        failedSegments.length = 0;
+        failedSegments.push(...stillFailed);
+      }
+
       // 检查是否有成功下载的分片
-      if (downloaded.length === 0) {
+      if (this.downloadedIndices.size === 0) {
         const errorHint = this.generateErrorHint(errorStats, sampleErrors);
-        const failedCount = completed;
-        throw new Error(`所有 ${failedCount} 个分片下载失败。\n\n排查建议:\n${errorHint}`);
+        throw new Error(`所有分片下载失败，可能 M3U8 链接已过期。\n\n排查建议:\n${errorHint}`);
       }
 
-      // 最终合并时，先切换目录
-      await this.switchPartDirectory();
-
-      // 合并所有部分
-      const segmentFiles: string[] = [];
-      for (const part of this.segmentParts) {
-        const files = fs.readdirSync(part.dirPath)
-          .filter(f => f.endsWith('.ts'))
-          .sort((a, b) => {
-            const numA = parseInt(a.match(/\d+/)?.[0] ?? '0', 10);
-            const numB = parseInt(b.match(/\d+/)?.[0] ?? '0', 10);
-            return numA - numB;
-          })
-          .map(f => path.join(part.dirPath, f));
-        segmentFiles.push(...files);
+      // 如果有失败的分片，提示用户
+      if (failedSegments.length > 0) {
+        console.log(`[${this.id}] 警告: ${failedSegments.length} 个分片下载失败，将跳过这些分片继续合并`);
+        this.updateProgress({
+          message: `警告: ${failedSegments.length} 个分片下载失败，将跳过继续合并`,
+        });
       }
+
+      // 最终保存元数据
+      this.saveMeta();
+
+      // 获取所有已下载的分片文件并排序
+      const segmentFiles = fs.readdirSync(this.chunksDir)
+        .filter(f => f.endsWith('.ts'))
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)?.[0] ?? '0', 10);
+          const numB = parseInt(b.match(/\d+/)?.[0] ?? '0', 10);
+          return numA - numB;
+        })
+        .map(f => path.join(this.chunksDir, f));
 
       this.updateProgress({
         status: 'merging',
@@ -429,6 +644,16 @@ export class DecryptingDownloader {
       });
 
       console.log(`[${this.id}] 下载完成: ${outputPath}`);
+
+      // 下载成功后清理临时目录
+      if (tempDir && fs.existsSync(tempDir)) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+          console.log(`[${this.id}] 已清理临时目录: ${tempDir}`);
+        } catch (e) {
+          console.error(`[${this.id}] 清理临时目录失败:`, e);
+        }
+      }
     } catch (error: any) {
       console.error(`[${this.id}] 错误:`, error);
       this.updateProgress({
@@ -438,32 +663,9 @@ export class DecryptingDownloader {
         progress: 0,
       });
       throw error;
-    } finally {
-      // 清理临时目录（保留预览目录如果需要）
-      if (tempDir && fs.existsSync(tempDir)) {
-        try {
-          // 如果有保留的预览文件，先复制出来
-          if (this.previewConfig.fileMode === 'keep' && this.previews.length > 0) {
-            const outputDir = path.dirname(this.options.outputPath);
-            const previewSaveDir = path.join(outputDir, 'previews');
-            if (!fs.existsSync(previewSaveDir)) {
-              fs.mkdirSync(previewSaveDir, { recursive: true });
-            }
-            for (const preview of this.previews) {
-              if (fs.existsSync(preview.path)) {
-                const destPath = path.join(previewSaveDir, preview.file);
-                fs.copyFileSync(preview.path, destPath);
-              }
-            }
-          }
-
-          fs.rmSync(tempDir, { recursive: true, force: true });
-          console.log(`[${this.id}] 已清理临时目录: ${tempDir}`);
-        } catch (e) {
-          console.error(`[${this.id}] 清理临时目录失败:`, e);
-        }
-      }
     }
+    // 注意：不再在 finally 中删除临时目录
+    // 仅在下载成功后删除，失败/取消/暂停时保留以便恢复
   }
 
   /**
@@ -484,6 +686,9 @@ export class DecryptingDownloader {
     this.pausePromise = new Promise(resolve => {
       this.pauseResolve = resolve;
     });
+    // 暂停时保存元数据，确保断点续传数据一致
+    this.saveMeta();
+    console.log(`[${this.id}] 已暂停，元数据已保存`);
   }
 
   /**
@@ -525,12 +730,12 @@ export class DecryptingDownloader {
       throw new Error('正在合成预览，请稍候');
     }
 
-    // 如果当前部分没有分片，无法合成
-    if (!this.currentPartDir || !fs.existsSync(this.currentPartDir)) {
+    // 检查分片目录是否存在且有分片
+    if (!this.chunksDir || !fs.existsSync(this.chunksDir)) {
       throw new Error('当前没有可合成的分片');
     }
 
-    const files = fs.readdirSync(this.currentPartDir).filter(f => f.endsWith('.ts'));
+    const files = fs.readdirSync(this.chunksDir).filter(f => f.endsWith('.ts'));
     if (files.length === 0) {
       throw new Error('当前没有可合成的分片');
     }
@@ -539,13 +744,51 @@ export class DecryptingDownloader {
     this.updateProgress({ isMergingPreview: true, message: '合成预览中...' });
 
     try {
-      // 1. 切换分片目录
-      await this.switchPartDirectory();
+      // 获取所有分片并排序
+      const segmentFiles = files
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)?.[0] ?? '0', 10);
+          const numB = parseInt(b.match(/\d+/)?.[0] ?? '0', 10);
+          return numA - numB;
+        })
+        .map(f => path.join(this.chunksDir, f));
 
-      // 2. 合成预览
-      const previewFile = await this.mergePreviewFile(mode);
+      // 生成预览文件名
+      const previewIndex = this.previews.length + 1;
+      const previewFileName = mode === 'temporary'
+        ? `preview_temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
+        : `preview_${String(previewIndex).padStart(3, '0')}.mp4`;
+      const previewPath = path.join(this.previewDir, previewFileName);
 
-      // 3. 更新状态
+      // 合并分片生成预览
+      await mergeSegments({
+        segmentFiles,
+        outputPath: previewPath,
+        tempDir: this.baseTempDir,
+      });
+
+      // 计算时长
+      const duration = estimateDuration(segmentFiles.length, this.avgSegmentDuration);
+
+      const previewFile: PreviewFile = {
+        file: previewFileName,
+        path: previewPath,
+        segments: segmentFiles.length,
+        duration,
+        createdAt: new Date().toISOString(),
+        mode,
+      };
+
+      this.previews.push(previewFile);
+
+      // 更新最新预览的副本
+      const latestPath = path.join(this.previewDir, 'preview_latest.mp4');
+      if (fs.existsSync(latestPath)) {
+        fs.unlinkSync(latestPath);
+      }
+      fs.copyFileSync(previewPath, latestPath);
+
+      // 更新状态
       this.updateProgress({
         isMergingPreview: false,
         message: `预览已生成: ${previewFile.file}`,
@@ -563,82 +806,6 @@ export class DecryptingDownloader {
     } finally {
       this.isPreviewMerging = false;
     }
-  }
-
-  /**
-   * 切换分片目录（用于合成预览）
-   */
-  private async switchPartDirectory(): Promise<void> {
-    // 将当前目录重命名为 part_N
-    if (this.currentPartDir && fs.existsSync(this.currentPartDir)) {
-      const files = fs.readdirSync(this.currentPartDir).filter(f => f.endsWith('.ts'));
-
-      if (files.length > 0) {
-        const newPartDir = path.join(this.baseTempDir, 'chunks', `part_${String(this.currentPartIndex).padStart(3, '0')}`);
-        fs.renameSync(this.currentPartDir, newPartDir);
-
-        this.segmentParts.push({
-          index: this.currentPartIndex,
-          dirPath: newPartDir,
-          segmentCount: files.length,
-          segmentIndices: files.map(f => {
-            const match = f.match(/seg_(\d+)\.ts/);
-            return match ? parseInt(match[1], 10) : 0;
-          }).sort((a, b) => a - b),
-        });
-
-        this.currentPartIndex++;
-      }
-    }
-
-    // 创建新的当前目录
-    this.currentPartDir = path.join(this.baseTempDir, 'chunks', 'part_current');
-    if (!fs.existsSync(this.currentPartDir)) {
-      fs.mkdirSync(this.currentPartDir, { recursive: true });
-    }
-  }
-
-  /**
-   * 合成预览文件
-   */
-  private async mergePreviewFile(mode: 'temporary' | 'keep'): Promise<PreviewFile> {
-    const previewIndex = this.previews.length + 1;
-    const previewFileName = mode === 'temporary'
-      ? `preview_temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`
-      : `preview_${String(previewIndex).padStart(3, '0')}.mp4`;
-    const previewPath = path.join(this.previewDir, previewFileName);
-
-    // 合并所有已完成的分片部分
-    await mergeSegmentsIncremental({
-      parts: this.segmentParts,
-      outputPath: previewPath,
-      tempDir: this.baseTempDir,
-      previewDir: this.previewDir,
-    });
-
-    // 计算总时长
-    const totalSegments = this.segmentParts.reduce((sum, p) => sum + p.segmentCount, 0);
-    const duration = estimateDuration(totalSegments, this.avgSegmentDuration);
-
-    const previewFile: PreviewFile = {
-      file: previewFileName,
-      path: previewPath,
-      segments: totalSegments,
-      duration,
-      createdAt: new Date().toISOString(),
-      mode,
-    };
-
-    this.previews.push(previewFile);
-
-    // 更新最新预览的副本
-    const latestPath = path.join(this.previewDir, 'preview_latest.mp4');
-    if (fs.existsSync(latestPath)) {
-      fs.unlinkSync(latestPath);
-    }
-    fs.copyFileSync(previewPath, latestPath);
-
-    return previewFile;
   }
 
   /**

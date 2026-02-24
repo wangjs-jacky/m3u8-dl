@@ -16,9 +16,44 @@ const node_fetch_1 = __importDefault(require("node-fetch"));
 const socks_proxy_agent_1 = require("socks-proxy-agent");
 const https_proxy_agent_1 = require("https-proxy-agent");
 /**
+ * 检查 URL 是否应该绕过代理
+ */
+function shouldBypassProxy(url) {
+    const noProxy = process.env.NO_PROXY || process.env.no_proxy || '';
+    if (!noProxy) {
+        return false;
+    }
+    const noProxyItems = noProxy.split(',').map(s => s.trim());
+    const hostname = new URL(url).hostname;
+    for (const item of noProxyItems) {
+        // 完全匹配
+        if (item === hostname) {
+            return true;
+        }
+        // 域名匹配（如 .example.com 匹配 foo.example.com）
+        if (item.startsWith('.') && hostname.endsWith(item.substring(1))) {
+            return true;
+        }
+        // 域名后缀匹配
+        if (hostname.endsWith('.' + item)) {
+            return true;
+        }
+        // 通配符匹配
+        if (item === '*') {
+            return true;
+        }
+    }
+    return false;
+}
+/**
  * 获取代理 Agent
  */
-function getProxyAgent() {
+function getProxyAgent(targetUrl) {
+    // 如果提供了目标 URL，检查是否应该绕过代理
+    if (targetUrl && shouldBypassProxy(targetUrl)) {
+        console.log(`[Proxy] 绕过代理: ${targetUrl}`);
+        return undefined;
+    }
     const proxyUrl = process.env.ALL_PROXY ||
         process.env.all_proxy ||
         process.env.HTTPS_PROXY ||
@@ -43,7 +78,7 @@ function getProxyAgent() {
  * 使用 fetch 发送请求（支持 SOCKS 代理）
  */
 async function fetchWithProxy(url, options = {}) {
-    const agent = getProxyAgent();
+    const agent = getProxyAgent(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), options.timeout || 30000);
     try {
@@ -72,7 +107,7 @@ async function fetchWithProxy(url, options = {}) {
  * 使用 fetch 下载二进制数据（支持 SOCKS 代理）
  */
 async function fetchBufferWithProxy(url, options = {}) {
-    const agent = getProxyAgent();
+    const agent = getProxyAgent(url);
     const timeout = options.timeout || 30000;
     return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
@@ -105,10 +140,10 @@ async function fetchBufferWithProxy(url, options = {}) {
     });
 }
 /**
- * 创建配置好的 axios 实例（不使用代理，用于非代理场景）
+ * 创建配置好的 axios 实例（支持代理和 NO_PROXY）
  */
 function createAxiosInstance(options = {}) {
-    const agent = getProxyAgent();
+    const agent = getProxyAgent(options.targetUrl);
     return axios_1.default.create({
         timeout: 30000,
         maxRedirects: 0,

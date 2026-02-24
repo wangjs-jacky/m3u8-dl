@@ -39,3 +39,12 @@ downloads/
 # 环境变量
 .env
 .env.local
+
+# 根目录构建输出（不忽略 packages/*/dist/）
+/dist/
+
+# Plasmo 缓存
+.plasmo/
+
+# Claude Code 本地配置
+.claude/

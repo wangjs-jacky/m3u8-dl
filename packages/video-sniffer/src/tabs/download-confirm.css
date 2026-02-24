@@ -1,0 +1,195 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  background: #1a1a2e;
+  color: #eee;
+  overflow: hidden;
+}
+
+.confirm-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a1a2e;
+}
+
+.confirm-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #16213e;
+}
+
+.confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-bottom: 1px solid #0f3460;
+}
+
+.confirm-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e94560;
+}
+
+.confirm-body {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0f3460;
+  color: #eee;
+  border: 1px solid #1a1a2e;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.form-group input::placeholder {
+  color: #666;
+}
+
+.filename-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: #0f3460;
+  border: 1px solid #1a1a2e;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.filename-input-wrapper input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+}
+
+.filename-input-wrapper input:focus {
+  outline: none;
+}
+
+.filename-input-wrapper .filename-ext {
+  color: #888;
+  font-size: 13px;
+  padding-right: 12px;
+  user-select: none;
+}
+
+.video-info {
+  background: #0f3460;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 16px;
+}
+
+.video-info .info-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.video-info .info-value {
+  font-size: 12px;
+  color: #aaa;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.confirm-footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid #0f3460;
+}
+
+.btn-cancel,
+.btn-confirm {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-cancel {
+  background: #0f3460;
+  color: #aaa;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background: #1a3a5c;
+  color: #eee;
+}
+
+.btn-confirm {
+  background: #e94560;
+  color: white;
+}
+
+.btn-confirm:hover:not(:disabled) {
+  background: #ff6b6b;
+}
+
+.btn-cancel:disabled,
+.btn-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Toast 提示样式 */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 1000;
+  animation: fadeInOut 2s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0; }
+  20%, 80% { opacity: 1; }
+}

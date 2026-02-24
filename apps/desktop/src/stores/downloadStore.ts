@@ -39,6 +39,7 @@ export interface DownloadTask {
   status: DownloadStatus
   message: string
   error?: string
+  referer?: string
   createdAt: string
   timestamp: string
   // 扩展字段
@@ -46,6 +47,11 @@ export interface DownloadTask {
   eta?: string
   totalSize?: number
   downloadedSize?: number
+  // 分片信息
+  totalSegments?: number
+  downloadedSegments?: number
+  // 临时目录
+  tempDir?: string
   // 预览相关字段
   previews?: PreviewFile[]
   isMergingPreview?: boolean
@@ -77,6 +83,7 @@ interface DownloadStore {
   isNewTaskModalOpen: boolean
   isSettingsModalOpen: boolean
   isBatchAddModalOpen: boolean
+  detailTaskId: string | null  // 详情模态框任务 ID
 
   // 设置
   settings: AppSettings
@@ -89,6 +96,7 @@ interface DownloadStore {
   cancelTask: (id: string) => Promise<void>
   deleteTask: (id: string) => Promise<void>
   clearCompleted: () => Promise<void>
+  refreshTask: (id: string) => Promise<{ wasStuck: boolean; message: string }>
 
   // UI 方法
   setSelectedTasks: (ids: string[]) => void
@@ -105,9 +113,13 @@ interface DownloadStore {
   closeSettingsModal: () => void
   openBatchAddModal: () => void
   closeBatchAddModal: () => void
+  openDetailModal: (taskId: string) => void
+  closeDetailModal: () => void
+  getDetailTask: () => DownloadTask | null
 
   // 设置方法
   updateSettings: (settings: Partial<AppSettings>) => void
+  syncConfigToServer: () => Promise<void>
 
   // 批量操作
   pauseSelected: () => Promise<void>
@@ -154,6 +166,7 @@ export const useDownloadStore = create<DownloadStore>()(
       isNewTaskModalOpen: false,
       isSettingsModalOpen: false,
       isBatchAddModalOpen: false,
+      detailTaskId: null,
       settings: defaultSettings,
 
       // 基础方法
@@ -223,6 +236,26 @@ export const useDownloadStore = create<DownloadStore>()(
         set({ selectedTaskIds: [] })
       },
 
+      refreshTask: async (id: string) => {
+        try {
+          const response = await fetch(`${API_BASE}/api/download/${id}/refresh`, { method: 'POST' })
+          if (response.ok) {
+            const result = await response.json()
+            await get().fetchTasks()
+            return {
+              wasStuck: result.task?.wasStuck || false,
+              message: result.task?.message || '刷新成功'
+            }
+          } else {
+            const error = await response.json()
+            throw new Error(error.error || '刷新失败')
+          }
+        } catch (error: any) {
+          console.error('Failed to refresh task:', error)
+          throw error
+        }
+      },
+
       // UI 方法
       setSelectedTasks: (ids) => set({ selectedTaskIds: ids }),
 
@@ -258,10 +291,34 @@ export const useDownloadStore = create<DownloadStore>()(
       closeSettingsModal: () => set({ isSettingsModalOpen: false }),
       openBatchAddModal: () => set({ isBatchAddModalOpen: true }),
       closeBatchAddModal: () => set({ isBatchAddModalOpen: false }),
+      openDetailModal: (taskId: string) => set({ detailTaskId: taskId }),
+      closeDetailModal: () => set({ detailTaskId: null }),
+      getDetailTask: () => {
+        const { tasks, detailTaskId } = get()
+        if (!detailTaskId) return null
+        return tasks.find(t => t.id === detailTaskId) || null
+      },
 
       // 设置方法
       updateSettings: (newSettings) => {
         set({ settings: { ...get().settings, ...newSettings } })
+        // 同步配置到服务端
+        get().syncConfigToServer()
+      },
+
+      syncConfigToServer: async () => {
+        const { settings } = get()
+        try {
+          await fetch(`${API_BASE}/api/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              defaultOutputPath: settings.defaultOutputPath,
+            }),
+          })
+        } catch (error) {
+          console.error('Failed to sync config:', error)
+        }
       },
 
       // 批量操作
@@ -371,6 +428,19 @@ export const useDownloadStore = create<DownloadStore>()(
       partialize: (state) => ({
         theme: state.theme,
         settings: state.settings,
+      }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...(persisted as any),
+        settings: {
+          ...current.settings,
+          ...((persisted as any)?.settings || {}),
+          // 确保 previewConfig 有默认值
+          previewConfig: {
+            ...current.settings.previewConfig,
+            ...((persisted as any)?.settings?.previewConfig || {}),
+          },
+        },
       }),
     }
   )

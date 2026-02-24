@@ -21,6 +21,9 @@
   },
   "manifest": {
     "permissions": ["webRequest", "storage", "tabs"],
-    "host_permissions": ["<all_urls>"]
+    "host_permissions": ["<all_urls>"],
+    "content_security_policy": {
+      "extension_pages": "script-src 'self' http://localhost; object-src 'self'; connect-src http://localhost:15151;"
+    }
   }
 }
