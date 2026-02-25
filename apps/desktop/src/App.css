@@ -1185,3 +1185,141 @@ input, textarea, .form-input, .detail-url, .detail-url-full, .detail-error {
 .theme-dark .form-select {
   background: var(--bg-tertiary);
 }
+
+/* ============================================
+   分片详情样式
+   ============================================ */
+
+/* 分片子节标题 */
+.detail-section-subtitle {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
+/* 分片子区域 */
+.detail-subsection {
+  margin-top: 12px;
+}
+
+.detail-subsection-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* 最近处理分片列表 */
+.segments-recent-list {
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+
+/* 失败分片列表 */
+.segments-failed-list {
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  margin-top: 8px;
+}
+
+/* 单个分片项 */
+.segment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.segment-item:not(:last-child) {
+  margin-bottom: 4px;
+}
+
+.segment-item.segment-completed {
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.segment-item.segment-failed {
+  background: rgba(220, 53, 69, 0.1);
+}
+
+.segment-index {
+  font-weight: 600;
+  min-width: 50px;
+  color: var(--text-primary);
+}
+
+.segment-status {
+  color: var(--text-secondary);
+}
+
+.segment-item.segment-completed .segment-status {
+  color: var(--success);
+}
+
+.segment-item.segment-failed .segment-status {
+  color: var(--danger);
+}
+
+.segment-error {
+  flex: 1;
+  color: var(--danger);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分片统计 */
+.segments-summary {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.segment-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.segment-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.segment-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.segment-stat-completed {
+  color: var(--success);
+}
+
+.segment-stat-failed {
+  color: var(--danger);
+}
+
+/* 深色主题调整 */
+.theme-dark .segment-item.segment-completed {
+  background: rgba(40, 167, 69, 0.15);
+}
+
+.theme-dark .segment-item.segment-failed {
+  background: rgba(244, 67, 54, 0.15);
+}

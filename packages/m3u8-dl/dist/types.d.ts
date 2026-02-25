@@ -1,6 +1,15 @@
 /**
  * TypeScript 类型定义
  */
+/** 分片状态 */
+export type SegmentStatus = 'pending' | 'downloading' | 'completed' | 'failed';
+/** 单个分片的详细状态 */
+export interface SegmentDetail {
+    index: number;
+    status: SegmentStatus;
+    error?: string;
+    retryCount?: number;
+}
 /** 下载状态 */
 export type DownloadStatus = 'pending' | 'downloading_key' | 'downloading' | 'paused' | 'merging' | 'completed' | 'error' | 'cancelled';
 /** 下载状态信息 */
@@ -17,6 +26,18 @@ export interface DownloadState {
     referer?: string;
     totalSegments?: number;
     downloadedSegments?: number;
+    segmentsDetail?: {
+        completed: number[];
+        failed: Array<{
+            index: number;
+            error: string;
+        }>;
+        recent?: Array<{
+            index: number;
+            status: SegmentStatus;
+            error?: string;
+        }>;
+    };
     tempDir?: string;
     isMergingPreview?: boolean;
     previews?: PreviewFile[];

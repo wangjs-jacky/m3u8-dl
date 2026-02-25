@@ -4,8 +4,9 @@ import './popup.css'
 
 function IndexPopup() {
   const [videos, setVideos] = useState<VideoItem[]>([])
-  const [filter, setFilter] = useState<FilterType>('all')
+  const [filter, setFilter] = useState<FilterType>('currentTab')
   const [currentTabUrl, setCurrentTabUrl] = useState<string>('')
+  const [currentTabId, setCurrentTabId] = useState<number>(-1)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [referer, setReferer] = useState<string>('')
   const [showSettings, setShowSettings] = useState(false)
@@ -20,7 +21,9 @@ function IndexPopup() {
   const getCurrentTab = async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     const url = tab?.url || ''
+    const tabId = tab?.id ?? -1
     setCurrentTabUrl(url)
+    setCurrentTabId(tabId)
     // 自动提取当前页面的 origin 作为默认 Referer
     try {
       const origin = new URL(url).origin
@@ -37,16 +40,31 @@ function IndexPopup() {
 
   // 过滤视频列表
   const filteredVideos = videos.filter(v => {
-    if (filter === 'm3u8') return v.type === 'm3u8'
-    if (filter === 'mp4') return v.type === 'mp4'
     if (filter === 'currentTab') {
-      try {
-        const videoDomain = new URL(v.pageUrl).hostname
-        const currentDomain = new URL(currentTabUrl).hostname
-        return videoDomain === currentDomain
-      } catch {
-        return false
-      }
+      return v.tabId === currentTabId
+    }
+    if (filter === 'bestQuality') {
+      // 每个分组只显示最高画质的视频
+      const groupBest = new Map<string, VideoItem>()
+      videos.forEach(video => {
+        const gid = video.groupId || video.url
+        const existing = groupBest.get(gid)
+        if (!existing) {
+          groupBest.set(gid, video)
+        } else {
+          // 比较画质：优先高度，其次带宽
+          const existingHeight = existing.quality?.height || 0
+          const currentHeight = video.quality?.height || 0
+          const existingBandwidth = existing.quality?.bandwidth || 0
+          const currentBandwidth = video.quality?.bandwidth || 0
+
+          if (currentHeight > existingHeight ||
+              (currentHeight === existingHeight && currentBandwidth > existingBandwidth)) {
+            groupBest.set(gid, video)
+          }
+        }
+      })
+      return Array.from(groupBest.values()).includes(v)
     }
     return true
   })
@@ -81,6 +99,33 @@ function IndexPopup() {
       }
     } catch {
       // 忽略错误，返回 null
+    }
+    return null
+  }
+
+  // 生成文件名
+  const generateFilename = (video: VideoItem) => {
+    const timestamp = new Date(video.timestamp).toISOString().slice(0, 10)
+    return `video_${timestamp}_${video.id.slice(0, 6)}`
+  }
+
+  // 从页面 URL 提取文件名（兜底策略）
+  const extractFilenameFromUrl = (pageUrl: string): string | null => {
+    try {
+      const url = new URL(pageUrl)
+      const pathname = url.pathname
+      // 从路径中提取最后一个非 .html/.htm 的部分
+      const segments = pathname.split('/').filter(Boolean)
+      const lastSegment = segments[segments.length - 1]
+      if (lastSegment) {
+        // 移除 .html, .htm 等后缀
+        const name = lastSegment.replace(/\.(html?|php|aspx?)$/i, '')
+        if (name && name.length > 0 && name.length < 100) {
+          return name
+        }
+      }
+    } catch {
+      // 忽略解析错误
     }
     return null
   }
@@ -151,51 +196,20 @@ function IndexPopup() {
     setSelectedIds(newSelected)
   }
 
-  // 生成文件名
-  const generateFilename = (video: VideoItem) => {
-    const timestamp = new Date(video.timestamp).toISOString().slice(0, 10)
-    return `video_${timestamp}_${video.id.slice(0, 6)}`
-  }
-
-  // 从页面 URL 提取文件名（兜底策略）
-  const extractFilenameFromUrl = (pageUrl: string): string | null => {
-    try {
-      const url = new URL(pageUrl)
-      const pathname = url.pathname
-      // 从路径中提取最后一个非 .html/.htm 的部分
-      const segments = pathname.split('/').filter(Boolean)
-      const lastSegment = segments[segments.length - 1]
-      if (lastSegment) {
-        // 移除 .html, .htm 等后缀
-        const name = lastSegment.replace(/\.(html?|php|aspx?)$/i, '')
-        if (name && name.length > 0 && name.length < 100) {
-          return name
-        }
-      }
-    } catch {
-      // 忽略解析错误
-    }
-    return null
-  }
-
-  // 批量下载选中项（API 优先，Deep Link 降级）
+  // 批量下载选中项
   const downloadSelected = async () => {
     const selectedVideos = filteredVideos.filter(v => selectedIds.has(v.id))
     const defaultPath = await getDefaultPath() || '~/Downloads/videos'
     const API_BASE = 'http://localhost:15151'
 
     let successCount = 0
-    let deepLinkCount = 0
+    let failCount = 0
 
     for (const video of selectedVideos) {
       const filename = extractFilenameFromUrl(video.pageUrl) || generateFilename(video)
       const outputPath = `${defaultPath}/${filename}.mp4`
 
-      // 先尝试 API
       try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 2000)
-
         const response = await fetch(`${API_BASE}/api/download/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -203,43 +217,24 @@ function IndexPopup() {
             url: video.url,
             referer: referer || undefined,
             output_path: outputPath
-          }),
-          signal: controller.signal
+          })
         })
-
-        clearTimeout(timeoutId)
 
         if (response.ok) {
           successCount++
-          continue
+        } else {
+          failCount++
         }
       } catch {
-        // API 失败，忽略
+        failCount++
       }
-
-      // API 不可用，使用 Deep Link
-      const params = new URLSearchParams()
-      params.set('url', video.url)
-      params.set('filename', filename)
-      params.set('output_path', outputPath)
-      if (referer) {
-        params.set('referer', referer)
-      }
-
-      const deepLinkUrl = `m3u8-downloader://download?${params.toString()}`
-      chrome.tabs.create({ url: deepLinkUrl, active: false }, (tab) => {
-        setTimeout(() => {
-          if (tab.id) chrome.tabs.remove(tab.id)
-        }, 1000)
-      })
-      deepLinkCount++
     }
 
     if (successCount > 0) {
       showToast(`已添加 ${successCount} 个任务`)
     }
-    if (deepLinkCount > 0) {
-      showToast(`${deepLinkCount} 个任务需要桌面应用`)
+    if (failCount > 0) {
+      showToast(`${failCount} 个任务失败（请确保桌面应用正在运行）`)
     }
     setSelectedIds(new Set())
   }
@@ -277,10 +272,9 @@ function IndexPopup() {
 
           <div className="toolbar">
             <select value={filter} onChange={(e) => setFilter(e.target.value as FilterType)}>
-              <option value="all">全部</option>
-              <option value="m3u8">M3U8</option>
-              <option value="mp4">MP4</option>
               <option value="currentTab">当前页面</option>
+              <option value="bestQuality">最佳画质</option>
+              <option value="all">全部</option>
             </select>
             <button
               className="btn-batch"
@@ -308,7 +302,10 @@ function IndexPopup() {
                       onChange={() => toggleSelect(v.id)}
                       className="checkbox"
                     />
-                    <span className={`type-badge ${v.type}`}>{v.type.toUpperCase()}</span>
+                    <span className="type-badge m3u8">M3U8</span>
+                    {v.quality?.label && (
+                      <span className="quality-badge">{v.quality.label}</span>
+                    )}
                     <span className="time">{formatTime(v.timestamp)}</span>
                     <button className="btn-delete" onClick={() => deleteItem(v.id)}>×</button>
                   </div>

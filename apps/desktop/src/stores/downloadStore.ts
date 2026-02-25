@@ -31,6 +31,17 @@ export interface PreviewFile {
   mode: 'temporary' | 'keep' | 'ask'
 }
 
+/** 分片详情 */
+export interface SegmentsDetail {
+  completed: number[]                    // 已完成的分片索引（最近 100 个）
+  failed: Array<{ index: number; error: string }>  // 失败的分片列表
+  recent?: Array<{                      // 最近处理的分片
+    index: number
+    status: 'completed' | 'failed'
+    error?: string
+  }>
+}
+
 export interface DownloadTask {
   id: string
   url: string
@@ -50,6 +61,8 @@ export interface DownloadTask {
   // 分片信息
   totalSegments?: number
   downloadedSegments?: number
+  // 分片详情（用于 UI 显示下载情况）
+  segmentsDetail?: SegmentsDetail
   // 临时目录
   tempDir?: string
   // 预览相关字段

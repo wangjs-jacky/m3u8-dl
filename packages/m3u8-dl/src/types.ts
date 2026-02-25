@@ -4,6 +4,17 @@
 
 import { SpawnOptions } from 'child_process';
 
+/** 分片状态 */
+export type SegmentStatus = 'pending' | 'downloading' | 'completed' | 'failed';
+
+/** 单个分片的详细状态 */
+export interface SegmentDetail {
+  index: number;           // 分片索引
+  status: SegmentStatus;   // 分片状态
+  error?: string;          // 错误信息（如果失败）
+  retryCount?: number;     // 重试次数
+}
+
 /** 下载状态 */
 export type DownloadStatus =
   | 'pending'
@@ -31,6 +42,19 @@ export interface DownloadState {
   // 分片信息
   totalSegments?: number;
   downloadedSegments?: number;
+  // 分片详情（用于 UI 显示下载情况）
+  segmentsDetail?: {
+    completed: number[];           // 已完成的分片索引（最近 100 个）
+    failed: Array<{                // 失败的分片列表
+      index: number;
+      error: string;
+    }>;
+    recent?: Array<{               // 最近处理的分片（用于实时显示）
+      index: number;
+      status: SegmentStatus;
+      error?: string;
+    }>;
+  };
   // 临时目录（用于打开分片文件夹）
   tempDir?: string;
   // 预览相关

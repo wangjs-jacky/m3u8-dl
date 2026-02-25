@@ -21,6 +21,9 @@ export declare class DecryptingDownloader {
     private ivString;
     private baseUrl;
     private segments;
+    private completedSegments;
+    private failedSegments;
+    private recentSegments;
     private previewConfig;
     private previews;
     private totalSegments;
@@ -32,6 +35,10 @@ export declare class DecryptingDownloader {
      * 更新进度状态
      */
     private updateProgress;
+    /**
+     * 更新分片详情
+     */
+    private updateSegmentDetail;
     /**
      * 保存任务元数据
      */

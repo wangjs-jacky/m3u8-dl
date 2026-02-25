@@ -70,6 +70,10 @@ class DecryptingDownloader {
         this.ivString = ''; // IV 字符串
         this.baseUrl = ''; // M3U8 基础 URL
         this.segments = []; // 分片列表
+        // 分片详情（用于 UI 显示）
+        this.completedSegments = []; // 已完成的分片索引（最多保留 100 个）
+        this.failedSegments = []; // 失败的分片
+        this.recentSegments = []; // 最近处理的分片
         this.previews = [];
         this.totalSegments = 0;
         this.avgSegmentDuration = 6;
@@ -96,6 +100,38 @@ class DecryptingDownloader {
         this.progressCallback({
             ...partial,
             timestamp: new Date().toISOString(),
+        });
+    }
+    /**
+     * 更新分片详情
+     */
+    updateSegmentDetail(index, status, error) {
+        if (status === 'completed') {
+            // 添加到已完成列表（最多保留 100 个）
+            this.completedSegments.push(index);
+            if (this.completedSegments.length > 100) {
+                this.completedSegments.shift(); // 移除最旧的记录
+            }
+        }
+        else if (status === 'failed' && error) {
+            // 添加到失败列表（检查是否已存在）
+            const existingIndex = this.failedSegments.findIndex(s => s.index === index);
+            if (existingIndex === -1) {
+                this.failedSegments.push({ index, error });
+            }
+        }
+        // 添加到最近处理列表（最多保留 20 个）
+        this.recentSegments.push({ index, status, error });
+        if (this.recentSegments.length > 20) {
+            this.recentSegments.shift();
+        }
+        // 通过进度回调传递分片详情
+        this.updateProgress({
+            segmentsDetail: {
+                completed: [...this.completedSegments],
+                failed: [...this.failedSegments],
+                recent: [...this.recentSegments],
+            },
         });
     }
     /**
@@ -440,6 +476,8 @@ class DecryptingDownloader {
                 for (const result of results) {
                     if (result.success) {
                         this.downloadedIndices.add(result.index);
+                        // 更新分片详情 - 成功
+                        this.updateSegmentDetail(result.index, 'completed');
                     }
                     else if (result.error) {
                         // 记录失败的分片，稍后重试
@@ -450,6 +488,8 @@ class DecryptingDownloader {
                         if (sampleErrors.length < 3) {
                             sampleErrors.push(result.error);
                         }
+                        // 更新分片详情 - 失败
+                        this.updateSegmentDetail(result.index, 'failed', result.error);
                     }
                 }
                 // 每批下载完成后立即保存元数据（确保进度不丢失）
@@ -509,9 +549,13 @@ class DecryptingDownloader {
                             const idx = failedSegments.indexOf(result.index);
                             if (idx > -1)
                                 failedSegments.splice(idx, 1);
+                            // 更新分片详情 - 重试成功
+                            this.updateSegmentDetail(result.index, 'completed');
                         }
                         else {
                             stillFailed.push(result.index);
+                            // 更新分片详情 - 重试仍然失败
+                            this.updateSegmentDetail(result.index, 'failed', result.error || '重试失败');
                         }
                     }
                     this.saveMeta();

@@ -41,20 +41,17 @@ function DownloadConfirm() {
   }
 
   const executeDownload = async () => {
+    if (!videoUrl) {
+      showToast('错误：视频 URL 为空')
+      return
+    }
+
     setIsLoading(true)
 
     const API_BASE = 'http://localhost:15151'
     const outputPath = `${defaultPath}/${filename}.mp4`
 
-    console.log('开始下载，URL:', videoUrl)
-    console.log('API地址:', API_BASE)
-
     try {
-      // 优先尝试 API 调用（桌面应用需要先启动）
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000) // 增加超时时间到 5 秒
-
-      console.log('发送请求...')
       const response = await fetch(`${API_BASE}/api/download/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,45 +59,18 @@ function DownloadConfirm() {
           url: videoUrl,
           referer: referer || undefined,
           output_path: outputPath
-        }),
-        signal: controller.signal
+        })
       })
-
-      clearTimeout(timeoutId)
-      console.log('收到响应，状态:', response.status)
 
       if (response.ok) {
         showToast('已添加到下载队列')
         setTimeout(closeWindow, 1000)
-        setIsLoading(false)
-        return
       } else {
-        throw new Error(`API returned ${response.status}`)
+        showToast(`请求失败: ${response.status}`)
       }
     } catch (error) {
-      console.error('API 调用失败:', error)
-      showToast(`API 失败: ${error}`)
+      showToast(`连接失败: 请确保桌面应用正在运行`)
     }
-
-    // API 不可用，降级到 Deep Link（仅生产模式支持）
-    const params = new URLSearchParams()
-    params.set('url', videoUrl)
-    params.set('filename', filename)
-    params.set('output_path', outputPath)
-    if (referer) {
-      params.set('referer', referer)
-    }
-
-    const deepLinkUrl = `m3u8-downloader://download?${params.toString()}`
-
-    chrome.tabs.create({ url: deepLinkUrl, active: false }, (tab) => {
-      setTimeout(() => {
-        if (tab.id) chrome.tabs.remove(tab.id)
-      }, 1000)
-    })
-
-    showToast('正在唤起桌面应用...')
-    setTimeout(closeWindow, 1500)
 
     setIsLoading(false)
   }

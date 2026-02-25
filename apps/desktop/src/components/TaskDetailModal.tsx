@@ -194,6 +194,82 @@ export function TaskDetailModal({ task, onClose }: TaskDetailModalProps) {
               </div>
             </div>
           )}
+
+          {/* 分片下载详情 */}
+          {task.segmentsDetail && (
+            <div className="detail-section">
+              <h3 className="detail-section-title">
+                分片下载详情
+                {task.totalSegments && (
+                  <span className="detail-section-subtitle">
+                    (总计 {task.totalSegments} 个分片)
+                  </span>
+                )}
+              </h3>
+
+              {/* 最近处理的分片 */}
+              {task.segmentsDetail.recent && task.segmentsDetail.recent.length > 0 && (
+                <div className="detail-subsection">
+                  <h4 className="detail-subsection-title">最近处理</h4>
+                  <div className="segments-recent-list">
+                    {task.segmentsDetail.recent.slice().reverse().map((seg) => (
+                      <div key={seg.index} className={`segment-item segment-${seg.status}`}>
+                        <span className="segment-index">#{seg.index}</span>
+                        <span className="segment-status">
+                          {seg.status === 'completed' ? '✓ 完成' : '✗ 失败'}
+                        </span>
+                        {seg.error && (
+                          <span className="segment-error">{seg.error}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 失败的分片 */}
+              {task.segmentsDetail.failed && task.segmentsDetail.failed.length > 0 && (
+                <div className="detail-subsection">
+                  <h4 className="detail-subsection-title">
+                    失败分片 ({task.segmentsDetail.failed.length})
+                  </h4>
+                  <div className="segments-failed-list">
+                    {task.segmentsDetail.failed
+                      .slice()
+                      .sort((a, b) => a.index - b.index)
+                      .map((seg) => (
+                        <div key={seg.index} className="segment-item segment-failed">
+                          <span className="segment-index">#{seg.index}</span>
+                          <span className="segment-error">{seg.error}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 统计信息 */}
+              <div className="segments-summary">
+                <div className="segment-stat">
+                  <span className="segment-stat-label">已完成</span>
+                  <span className="segment-stat-value segment-stat-completed">
+                    {task.downloadedSegments ?? 0}
+                  </span>
+                </div>
+                <div className="segment-stat">
+                  <span className="segment-stat-label">失败</span>
+                  <span className="segment-stat-value segment-stat-failed">
+                    {task.segmentsDetail.failed?.length ?? 0}
+                  </span>
+                </div>
+                {task.totalSegments && (
+                  <div className="segment-stat">
+                    <span className="segment-stat-label">总计</span>
+                    <span className="segment-stat-value">{task.totalSegments}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">
